@@ -17,7 +17,7 @@
 #include "app/netif_common.h"
 #include "app/netif_lte.h"
 
-static const char *LOG_TAG = "APP_MAIN";
+static const char *LOG_TAG = "A_APP";
 
 void app_main(void) {
     esp_err_t ret = nvs_flash_init();

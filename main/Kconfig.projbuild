@@ -22,4 +22,10 @@ menu "Application Specific Configuration"
         default 10
         help
             Select the pin number for LTE module.
+
+    config APP_NETIF_LTE_APN
+        string "LTE network Access Point (APN)"
+        default "3gnet"
+        help
+            Configure the APN name for LTE carrier.
 endmenu
