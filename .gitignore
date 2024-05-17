@@ -1,0 +1,5 @@
+/build
+/cmake-build-*
+/managed_components
+/sdkconfig
+/sdkconfig.old
