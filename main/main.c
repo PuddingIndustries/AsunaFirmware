@@ -16,8 +16,9 @@
 /* App */
 #include "app/netif_common.h"
 #include "app/netif_lte.h"
+#include "app/netif_wifi.h"
 
-static const char *LOG_TAG = "A_APP";
+static const char *LOG_TAG = "A_MAIN";
 
 void app_main(void) {
     esp_err_t ret = nvs_flash_init();
@@ -31,6 +32,12 @@ void app_main(void) {
 
     if (app_netif_init() != 0) {
         ESP_LOGE(LOG_TAG, "Failed to initialize network interfaces.");
+
+        goto dead_loop;
+    }
+
+    if (app_netif_wifi_init() != 0) {
+        ESP_LOGE(LOG_TAG, "Failed to initialize WiFi interface.");
 
         goto dead_loop;
     }

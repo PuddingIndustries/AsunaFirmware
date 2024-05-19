@@ -27,6 +27,8 @@ static void app_netif_lte_disable(void);
 static void app_netif_lte_ppp_event_cb(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data);
 
 int app_netif_lte_init(void) {
+    ESP_LOGI(LOG_TAG, "Initializing...");
+
     gpio_config_t pin_conf = {
         .pin_bit_mask = (1U << LTE_EN_PIN),
         .intr_type    = GPIO_INTR_DISABLE,
@@ -86,6 +88,8 @@ int app_netif_lte_init(void) {
         ESP_LOGE(LOG_TAG, "Set module to data mode failed: %d", ret);
         return -4;
     }
+
+    ESP_LOGI(LOG_TAG, "Initialization completed.");
 
     return 0;
 }
