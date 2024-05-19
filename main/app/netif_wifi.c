@@ -63,11 +63,11 @@ int app_netif_wifi_init(void) {
     /* ---- Load / Generate SSID based on AP MAC ---- */
 
     if (nvs_get_str(wifi_cfg_handle, APP_NETIF_WIFI_CFG_KEY_AP_SSID, NULL, &ap_ssid_len) != ESP_OK) {
-        uint8_t ap_mac[8];
+        uint8_t ap_mac[6];
 
         ESP_ERROR_CHECK(esp_wifi_get_mac(WIFI_IF_AP, ap_mac));
 
-        snprintf(ap_ssid, 32, APP_NETIF_WIFI_AP_SSID_PREFIX "%02X%02X%02X", ap_mac[5], ap_mac[6], ap_mac[7]);
+        snprintf(ap_ssid, 32, APP_NETIF_WIFI_AP_SSID_PREFIX "%02X%02X%02X", ap_mac[3], ap_mac[4], ap_mac[5]);
         ESP_LOGW(LOG_TAG, "Creating default AP SSID: %s", ap_ssid);
 
         ESP_ERROR_CHECK(nvs_set_str(wifi_cfg_handle, APP_NETIF_WIFI_CFG_KEY_AP_SSID, ap_ssid));
@@ -129,14 +129,14 @@ static void app_netif_wifi_event_handler(void *arg, esp_event_base_t event_base,
     switch (event_id) {
         case WIFI_EVENT_AP_STACONNECTED: {
             const wifi_event_ap_staconnected_t *event = event_data;
-            ESP_LOGI(LOG_TAG, "station " MACSTR " joined, AID=%d", MAC2STR(event->mac), event->aid);
+            ESP_LOGI(LOG_TAG, "Station " MACSTR " joined, AID=%d.", MAC2STR(event->mac), event->aid);
 
             break;
         }
 
         case WIFI_EVENT_AP_STADISCONNECTED: {
             const wifi_event_ap_stadisconnected_t *event = event_data;
-            ESP_LOGI(LOG_TAG, "station " MACSTR " left, AID=%d", MAC2STR(event->mac), event->aid);
+            ESP_LOGI(LOG_TAG, "Station " MACSTR " left, AID=%d.", MAC2STR(event->mac), event->aid);
 
             break;
         }

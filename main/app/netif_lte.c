@@ -83,6 +83,8 @@ int app_netif_lte_init(void) {
         ESP_LOGI(LOG_TAG, "Module version: %s", resp_buf);
     }
 
+    /* TODO: Handle No-SIM status. */
+
     esp_err_t ret = esp_modem_set_mode(dce, ESP_MODEM_MODE_DATA);
     if (ret != ESP_OK) {
         ESP_LOGE(LOG_TAG, "Set module to data mode failed: %d", ret);
@@ -96,9 +98,9 @@ int app_netif_lte_init(void) {
 
 static void app_netif_lte_reset(void) {
     app_netif_lte_disable();
-    vTaskDelay(pdMS_TO_TICKS(200));
+    vTaskDelay(pdMS_TO_TICKS(100));
     app_netif_lte_enable();
-    vTaskDelay(pdMS_TO_TICKS(200));
+    vTaskDelay(pdMS_TO_TICKS(100));
 }
 
 static void app_netif_lte_enable(void) {
@@ -108,6 +110,8 @@ static void app_netif_lte_enable(void) {
 static void app_netif_lte_disable(void) {
     gpio_set_level(LTE_EN_PIN, 0U);
 }
+
+/* TODO: Find a way to detect PPP status and reconnect */
 
 static void app_netif_lte_ppp_event_cb(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data) {
     ESP_LOGI(LOG_TAG, "PPP state changed event %" PRIu32, event_id);

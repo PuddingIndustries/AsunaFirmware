@@ -14,6 +14,7 @@
 #include "spi_flash_mmap.h"
 
 /* App */
+#include "app/api_server.h"
 #include "app/netif_common.h"
 #include "app/netif_lte.h"
 #include "app/netif_wifi.h"
@@ -32,6 +33,12 @@ void app_main(void) {
 
     if (app_netif_init() != 0) {
         ESP_LOGE(LOG_TAG, "Failed to initialize network interfaces.");
+
+        goto dead_loop;
+    }
+
+    if (app_api_server_init() != 0) {
+        ESP_LOGE(LOG_TAG, "Failed to initialize web server.");
 
         goto dead_loop;
     }
