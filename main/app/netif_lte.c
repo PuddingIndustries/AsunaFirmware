@@ -33,11 +33,18 @@ int app_netif_lte_init(void) {
         .pin_bit_mask = (1U << LTE_EN_PIN),
         .intr_type    = GPIO_INTR_DISABLE,
         .mode         = GPIO_MODE_OUTPUT_OD,
-        .pull_up_en   = GPIO_PULLUP_DISABLE,
+        .pull_up_en   = GPIO_PULLUP_ENABLE,
         .pull_down_en = GPIO_PULLDOWN_DISABLE,
     };
 
     gpio_config(&pin_conf);
+
+    pin_conf.pin_bit_mask = 1U << LTE_DTR_PIN;
+    pin_conf.mode = GPIO_MODE_OUTPUT_OD;
+
+    gpio_config(&pin_conf);
+
+    gpio_set_level(LTE_DTR_PIN, 0U);
 
     app_netif_lte_reset();
 
@@ -57,10 +64,10 @@ int app_netif_lte_init(void) {
     dte_config.uart_config.rts_io_num       = -1;
     dte_config.uart_config.cts_io_num       = -1;
     dte_config.uart_config.flow_control     = ESP_MODEM_FLOW_CONTROL_NONE;
-    dte_config.uart_config.rx_buffer_size   = 512;
-    dte_config.uart_config.tx_buffer_size   = 512;
+    dte_config.uart_config.rx_buffer_size   = 1024;
+    dte_config.uart_config.tx_buffer_size   = 1024;
     dte_config.uart_config.event_queue_size = 4;
-    dte_config.task_stack_size              = 1024;
+    dte_config.task_stack_size              = 2048;
     dte_config.task_priority                = 3;
     dte_config.dte_buffer_size              = 512;
 
