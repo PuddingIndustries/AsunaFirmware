@@ -35,7 +35,8 @@ typedef struct {
     void*                                  user_data;
 } app_netif_lte_ctx_t;
 
-static CellularHandle_t s_cellular_handle = NULL;
+static CellularHandle_t             s_cellular_handle = NULL;
+static CellularCommInterface_t      s_cellular_comm_interface;
 
 static void                         app_netif_lte_pin_init(void);
 static void                         app_netif_lte_reset(void);
@@ -57,14 +58,12 @@ int app_netif_lte_init(void) {
     app_netif_lte_pin_init();
     app_netif_lte_reset();
 
-    CellularCommInterface_t comm_interface = {
-        .open  = app_netif_lte_comm_open,
-        .close = app_netif_lte_comm_close,
-        .send  = app_netif_lte_comm_send,
-        .recv  = app_netif_lte_comm_recv,
-    };
+    s_cellular_comm_interface.open  = app_netif_lte_comm_open;
+    s_cellular_comm_interface.close = app_netif_lte_comm_close;
+    s_cellular_comm_interface.send  = app_netif_lte_comm_send;
+    s_cellular_comm_interface.recv  = app_netif_lte_comm_recv;
 
-    if (Cellular_Init(&s_cellular_handle, &comm_interface) != CELLULAR_SUCCESS) {
+    if (Cellular_Init(&s_cellular_handle, &s_cellular_comm_interface) != CELLULAR_SUCCESS) {
         ESP_LOGE(LOG_TAG, "Failed to initialize celluar network.");
 
         return -1;
@@ -82,7 +81,7 @@ int app_netif_lte_init(void) {
 
     CellularSignalInfo_t signal_info;
 
-    if(Cellular_GetSignalInfo(s_cellular_handle, &signal_info) != CELLULAR_SUCCESS) {
+    if (Cellular_GetSignalInfo(s_cellular_handle, &signal_info) != CELLULAR_SUCCESS) {
         ESP_LOGE(LOG_TAG, "Failed to get signal info");
 
         return -3;
@@ -209,6 +208,11 @@ static CellularCommInterfaceError_t app_netif_lte_comm_recv(CellularCommInterfac
     size_t rx_len;
     if (uart_get_buffered_data_len(LTE_UART_NUM, &rx_len) != ESP_OK) {
         goto err_read;
+    }
+
+    if (rx_len == 0) {
+        *pDataReceivedLength = 0U;
+        return IOT_COMM_INTERFACE_SUCCESS;
     }
 
     if (rx_len > bufferLength) {

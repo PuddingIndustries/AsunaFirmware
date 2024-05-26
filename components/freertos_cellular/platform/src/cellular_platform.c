@@ -6,14 +6,12 @@ bool PlatformMutex_Create(PlatformMutex_t* pNewMutex, bool recursive) {
     if (recursive) {
         pNewMutex->xMutex = xSemaphoreCreateRecursiveMutex();
     } else {
-        pNewMutex->xMutex = xSemaphoreCreateBinary();
+        pNewMutex->xMutex = xSemaphoreCreateMutex();
     }
 
     if (pNewMutex->xMutex == NULL) {
         return false;
     }
-
-    PlatformMutex_Unlock(pNewMutex);
 
     return true;
 }
