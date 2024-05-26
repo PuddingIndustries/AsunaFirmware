@@ -1,0 +1,21 @@
+idf_component_register(SRCS
+    "ec800/source/cellular_ec800.c"
+    "ec800/source/cellular_ec800_api.c"
+    "ec800/source/cellular_ec800_urc_handler.c"
+    "ec800/source/cellular_ec800_wrapper.c"
+    "platform/src/cellular_platform.c"
+    "src/source/cellular_3gpp_api.c"
+    "src/source/cellular_3gpp_urc_handler.c"
+    "src/source/cellular_at_core.c"
+    "src/source/cellular_common.c"
+    "src/source/cellular_common_api.c"
+    "src/source/cellular_pkthandler.c"
+    "src/source/cellular_pktio.c"
+INCLUDE_DIRS
+    "ec800/source"
+    "platform/include"
+    "src/source/include"
+    "src/source/include/common"
+    "src/source/interface"
+    "src/source/include/private"
+)

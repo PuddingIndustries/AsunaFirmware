@@ -1,0 +1,6 @@
+[submodule "components/freertos_cellular/src"]
+	path = components/freertos_cellular/src
+	url = https://github.com/imi415/FreeRTOS-Cellular-Interface.git
+[submodule "components/freertos_cellular/ec800"]
+	path = components/freertos_cellular/ec800
+	url = https://github.com/imi415/FreeRTOS-Cellular-Interface-Reference-Quectel-EC800.git

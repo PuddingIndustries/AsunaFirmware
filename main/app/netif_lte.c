@@ -1,32 +1,55 @@
+#include <string.h>
+
 /* FreeRTOS */
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
 /* IDF */
 #include "driver/gpio.h"
-#include "esp_event.h"
+#include "driver/uart.h"
 #include "esp_log.h"
-#include "esp_modem_api.h"
-#include "esp_netif.h"
-#include "esp_netif_ppp.h"
+
+/* FreeRTOS+ Config */
+#include "cellular_config.h"
+/* FreeRTOS+ */
+#include "cellular_api.h"
 
 /* App */
 #include "app/netif_lte.h"
 
-#define LTE_EN_PIN  CONFIG_APP_NETIF_LTE_EN_GPIO
-#define LTE_TX_PIN  CONFIG_APP_NETIF_LTE_TX_GPIO
-#define LTE_RX_PIN  CONFIG_APP_NETIF_LTE_RX_GPIO
-#define LTE_DTR_PIN CONFIG_APP_NETIF_LTE_DTR_GPIO
-#define LTE_APN     CONFIG_APP_NETIF_LTE_APN
+#define LTE_UART_NUM      UART_NUM_1
+#define LTE_UART_BUF_SIZE (1024)
+#define LTE_EN_PIN        CONFIG_APP_NETIF_LTE_EN_GPIO
+#define LTE_TX_PIN        CONFIG_APP_NETIF_LTE_TX_GPIO
+#define LTE_RX_PIN        CONFIG_APP_NETIF_LTE_RX_GPIO
+#define LTE_DTR_PIN       CONFIG_APP_NETIF_LTE_DTR_GPIO
+#define LTE_APN           CONFIG_APP_NETIF_LTE_APN
 
 static const char* LOG_TAG = "A_LTE";
 
-static QueueHandle_t s_lte_ppp_event_queue = NULL;
+typedef struct {
+    QueueHandle_t uart_rx_queue;
+    TaskHandle_t  uart_rx_task;
 
-static void app_netif_lte_pin_init(void);
-static void app_netif_lte_reset(void);
-static void app_netif_lte_ppp_event_cb(void* arg, esp_event_base_t event_base, int32_t event_id, void* event_data);
-static void app_netif_lte_task(void* arguments);
+    CellularCommInterfaceReceiveCallback_t recv_callback;
+    void*                                  user_data;
+} app_netif_lte_ctx_t;
+
+static CellularHandle_t s_cellular_handle = NULL;
+
+static void                         app_netif_lte_pin_init(void);
+static void                         app_netif_lte_reset(void);
+static CellularCommInterfaceError_t app_netif_lte_comm_open(CellularCommInterfaceReceiveCallback_t receiveCallback,
+                                                            void*                                  pUserData,
+                                                            CellularCommInterfaceHandle_t* pCommInterfaceHandle);
+static CellularCommInterfaceError_t app_netif_lte_comm_send(CellularCommInterfaceHandle_t commInterfaceHandle,
+                                                            const uint8_t* pData, uint32_t dataLength,
+                                                            uint32_t timeoutMilliseconds, uint32_t* pDataSentLength);
+static CellularCommInterfaceError_t app_netif_lte_comm_recv(CellularCommInterfaceHandle_t commInterfaceHandle,
+                                                            uint8_t* pBuffer, uint32_t bufferLength,
+                                                            uint32_t  timeoutMilliseconds,
+                                                            uint32_t* pDataReceivedLength);
+static CellularCommInterfaceError_t app_netif_lte_comm_close(CellularCommInterfaceHandle_t commInterfaceHandle);
 
 int app_netif_lte_init(void) {
     ESP_LOGI(LOG_TAG, "Initializing...");
@@ -34,47 +57,38 @@ int app_netif_lte_init(void) {
     app_netif_lte_pin_init();
     app_netif_lte_reset();
 
-    s_lte_ppp_event_queue = xQueueCreate(4, sizeof(uint32_t));
-    if (s_lte_ppp_event_queue == NULL) {
-        ESP_LOGE(LOG_TAG, "Failed to create event queue.");
+    CellularCommInterface_t comm_interface = {
+        .open  = app_netif_lte_comm_open,
+        .close = app_netif_lte_comm_close,
+        .send  = app_netif_lte_comm_send,
+        .recv  = app_netif_lte_comm_recv,
+    };
+
+    if (Cellular_Init(&s_cellular_handle, &comm_interface) != CELLULAR_SUCCESS) {
+        ESP_LOGE(LOG_TAG, "Failed to initialize celluar network.");
 
         return -1;
     }
 
-    ESP_ERROR_CHECK(esp_event_handler_register(NETIF_PPP_STATUS, ESP_EVENT_ANY_ID, app_netif_lte_ppp_event_cb, NULL));
+    CellularPlmnInfo_t network_info;
 
-    esp_modem_dce_config_t dce_config       = ESP_MODEM_DCE_DEFAULT_CONFIG(LTE_APN);
-    esp_netif_config_t     netif_ppp_config = ESP_NETIF_DEFAULT_PPP();
-    esp_netif_t*           lte_netif        = esp_netif_new(&netif_ppp_config);
+    if (Cellular_GetRegisteredNetwork(s_cellular_handle, &network_info) != CELLULAR_SUCCESS) {
+        ESP_LOGE(LOG_TAG, "Failed to get network information");
 
-    if (lte_netif == NULL) {
-        return -1;
-    }
-
-    esp_modem_dte_config_t dte_config       = ESP_MODEM_DTE_DEFAULT_CONFIG();
-    dte_config.uart_config.tx_io_num        = LTE_TX_PIN;
-    dte_config.uart_config.rx_io_num        = LTE_RX_PIN;
-    dte_config.uart_config.rts_io_num       = -1;
-    dte_config.uart_config.cts_io_num       = -1;
-    dte_config.uart_config.flow_control     = ESP_MODEM_FLOW_CONTROL_NONE;
-    dte_config.uart_config.rx_buffer_size   = 1024;
-    dte_config.uart_config.tx_buffer_size   = 1024;
-    dte_config.uart_config.event_queue_size = 4;
-    dte_config.task_stack_size              = 1024;
-    dte_config.task_priority                = 2;
-    dte_config.dte_buffer_size              = 512;
-
-    esp_modem_dce_t* dce = esp_modem_new(&dte_config, &dce_config, lte_netif);
-    if (dce == NULL) {
-        ESP_LOGE(LOG_TAG, "Failed to create modem.");
         return -2;
     }
 
-    if (xTaskCreate(app_netif_lte_task, "LTE", 2048, dce, 3, NULL) != pdPASS) {
-        ESP_LOGE(LOG_TAG, "Failed to create LTE task.");
+    ESP_LOGI(LOG_TAG, "MCC: %s, MNC: %s", network_info.mcc, network_info.mnc);
+
+    CellularSignalInfo_t signal_info;
+
+    if(Cellular_GetSignalInfo(s_cellular_handle, &signal_info) != CELLULAR_SUCCESS) {
+        ESP_LOGE(LOG_TAG, "Failed to get signal info");
+
         return -3;
     }
 
+    ESP_LOGI(LOG_TAG, "Signal info: rssi: %d, ber: %d", signal_info.rssi, signal_info.ber);
     ESP_LOGI(LOG_TAG, "Initialization completed.");
 
     return 0;
@@ -106,40 +120,123 @@ static void app_netif_lte_reset(void) {
     vTaskDelay(pdMS_TO_TICKS(100));
 }
 
-/* TODO: Find a way to detect PPP status and reconnect */
+static void app_netif_lte_comm_task(void* arguments) {
+    app_netif_lte_ctx_t* ctx = arguments;
 
-static void app_netif_lte_ppp_event_cb(void* arg, esp_event_base_t event_base, int32_t event_id, void* event_data) {
-    ESP_LOGI(LOG_TAG, "PPP event ID received: %ld", event_id);
-    if (xQueueSend(s_lte_ppp_event_queue, &event_id, 0) != pdPASS) {
-        ESP_LOGW(LOG_TAG, "PPP event lost...");
+    uart_event_t event;
+    for (;;) {
+        if (xQueueReceive(ctx->uart_rx_queue, &event, portMAX_DELAY) == pdPASS) {
+            ESP_LOGD(LOG_TAG, "Received UART event.");
+
+            switch (event.type) {
+                case UART_DATA:
+                    ctx->recv_callback(ctx->user_data, (CellularCommInterfaceHandle_t)ctx);
+                    break;
+
+                default:
+                    break;
+            }
+        }
     }
 }
 
-static void app_netif_lte_task(void* arguments) {
-    esp_modem_dce_t* dce = arguments;
+static CellularCommInterfaceError_t app_netif_lte_comm_open(CellularCommInterfaceReceiveCallback_t receiveCallback,
+                                                            void*                                  pUserData,
+                                                            CellularCommInterfaceHandle_t* pCommInterfaceHandle) {
+    ESP_LOGI(LOG_TAG, "Comm open");
 
-    char resp_buf[32];
-    while (esp_modem_get_module_name(dce, resp_buf) != ESP_OK) {
-        ESP_LOGW(LOG_TAG, "Get module name failed, perhaps not booted yet.");
-        vTaskDelay(pdMS_TO_TICKS(1000));
+    app_netif_lte_ctx_t* ctx = malloc(sizeof(app_netif_lte_ctx_t));
+    if (ctx == NULL) {
+        ESP_LOGE(LOG_TAG, "Failed to allocate LTE comm context");
+
+        return IOT_COMM_INTERFACE_FAILURE;
     }
 
-    ESP_LOGI(LOG_TAG, "Module name: %s", resp_buf);
+    memset(ctx, 0x00U, sizeof(app_netif_lte_ctx_t));
 
-    if (esp_modem_at(dce, "AT+CGMR", resp_buf, 500) != ESP_OK) {
-        ESP_LOGW(LOG_TAG, "Failed to get module version.");
-    } else {
-        ESP_LOGI(LOG_TAG, "Module version: %s", resp_buf);
+    const uart_config_t uart_config = {
+        .baud_rate  = 115200,
+        .data_bits  = UART_DATA_8_BITS,
+        .parity     = UART_PARITY_DISABLE,
+        .stop_bits  = UART_STOP_BITS_1,
+        .flow_ctrl  = UART_HW_FLOWCTRL_DISABLE,
+        .source_clk = UART_SCLK_DEFAULT,
+    };
+
+    ctx->recv_callback = receiveCallback;
+    ctx->user_data     = pUserData;
+
+    uart_driver_install(LTE_UART_NUM, LTE_UART_BUF_SIZE, LTE_UART_BUF_SIZE, 16, &ctx->uart_rx_queue, 0);
+    uart_param_config(LTE_UART_NUM, &uart_config);
+    uart_set_pin(LTE_UART_NUM, LTE_TX_PIN, LTE_RX_PIN, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE);
+
+    if (xTaskCreate(app_netif_lte_comm_task, "A_COMM", 2048, ctx, 3, &ctx->uart_rx_task) != pdPASS) {
+        ESP_LOGE(LOG_TAG, "Failed to create LTE comm RX task");
+
+        free(ctx);
+        return IOT_COMM_INTERFACE_FAILURE;
     }
 
-    /* TODO: Handle No-SIM status. */
+    *pCommInterfaceHandle = (CellularCommInterfaceHandle_t)ctx;
 
-    esp_err_t ret = esp_modem_set_mode(dce, ESP_MODEM_MODE_DATA);
-    if (ret != ESP_OK) {
-        ESP_LOGE(LOG_TAG, "Set module to data mode failed: %d", ret);
+    return IOT_COMM_INTERFACE_SUCCESS;
+}
+
+static CellularCommInterfaceError_t app_netif_lte_comm_send(CellularCommInterfaceHandle_t commInterfaceHandle,
+                                                            const uint8_t* pData, uint32_t dataLength,
+                                                            uint32_t timeoutMilliseconds, uint32_t* pDataSentLength) {
+    ESP_LOGD(LOG_TAG, "LTE command send: %ld bytes", dataLength);
+
+    *pDataSentLength = 0;
+
+    if (uart_write_bytes(LTE_UART_NUM, pData, dataLength) != ESP_OK) {
+        return IOT_COMM_INTERFACE_FAILURE;
     }
 
-    for (;;) {
-        vTaskDelay(pdMS_TO_TICKS(1000));
+    if (uart_wait_tx_done(LTE_UART_NUM, pdMS_TO_TICKS(timeoutMilliseconds)) != ESP_OK) {
+        return IOT_COMM_INTERFACE_TIMEOUT;
     }
+
+    *pDataSentLength = dataLength;
+
+    return IOT_COMM_INTERFACE_SUCCESS;
+}
+
+static CellularCommInterfaceError_t app_netif_lte_comm_recv(CellularCommInterfaceHandle_t commInterfaceHandle,
+                                                            uint8_t* pBuffer, uint32_t bufferLength,
+                                                            uint32_t  timeoutMilliseconds,
+                                                            uint32_t* pDataReceivedLength) {
+    size_t rx_len;
+    if (uart_get_buffered_data_len(LTE_UART_NUM, &rx_len) != ESP_OK) {
+        goto err_read;
+    }
+
+    if (rx_len > bufferLength) {
+        rx_len = bufferLength;
+    }
+
+    ESP_LOGD(LOG_TAG, "LTE command recv: %d bytes", rx_len);
+
+    int ret = uart_read_bytes(LTE_UART_NUM, pBuffer, rx_len, pdMS_TO_TICKS(timeoutMilliseconds));
+    if (ret < 0) {
+        goto err_read;
+    }
+
+    *pDataReceivedLength = ret;
+    return IOT_COMM_INTERFACE_SUCCESS;
+
+err_read:
+    *pDataReceivedLength = 0U;
+    return IOT_COMM_INTERFACE_FAILURE;
+}
+
+static CellularCommInterfaceError_t app_netif_lte_comm_close(CellularCommInterfaceHandle_t commInterfaceHandle) {
+    app_netif_lte_ctx_t* ctx = (app_netif_lte_ctx_t*)commInterfaceHandle;
+
+    vTaskDelete(ctx->uart_rx_task);
+    uart_driver_delete(LTE_UART_NUM);
+
+    free(ctx);
+
+    return IOT_COMM_INTERFACE_SUCCESS;
 }
