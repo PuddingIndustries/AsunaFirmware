@@ -19,7 +19,7 @@
 #include "app/netif_lte.h"
 #include "app/netif_wifi.h"
 
-static const char *LOG_TAG = "a_main";
+static const char *LOG_TAG = "asuna_main";
 
 void app_main(void) {
     esp_err_t ret = nvs_flash_init();

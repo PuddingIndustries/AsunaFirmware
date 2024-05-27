@@ -6,7 +6,7 @@
 /* App */
 #include "app/netif_common.h"
 
-static const char *LOG_TAG = "a_net";
+static const char *LOG_TAG = "asuna_net";
 
 static void app_netif_ip_event_cb(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data);
 
