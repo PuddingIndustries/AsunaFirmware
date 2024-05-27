@@ -26,7 +26,7 @@
 #define PlatformEnterCritical(x) taskENTER_CRITICAL(x)
 #define PlatformExitCritical(x)  taskEXIT_CRITICAL(x)
 
-#define PLATFORM_THREAD_DEFAULT_STACK_SIZE (2048U)
+#define PLATFORM_THREAD_DEFAULT_STACK_SIZE (3072U)
 #define PLATFORM_THREAD_DEFAULT_PRIORITY   (tskIDLE_PRIORITY + 2U)
 
 typedef struct PlatformMutex {

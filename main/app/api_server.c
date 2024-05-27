@@ -16,7 +16,7 @@ typedef struct {
     const httpd_uri_t *uri;
 } app_api_server_handler_t;
 
-static const char *LOG_TAG = "A_HTTP";
+static const char *LOG_TAG = "a_http";
 
 static const app_api_server_handler_t s_app_uri_list[] = {
     {.name = "INDEX", .init = app_api_handler_index_init, .uri = &app_api_handler_index_uri},

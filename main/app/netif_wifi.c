@@ -24,7 +24,7 @@ static const char *APP_NETIF_WIFI_CFG_KEY_AP_CHAN = "ap_chan";
 static const char *APP_NETIF_WIFI_CFG_KEY_AP_SSID = "ap_ssid";
 static const char *APP_NETIF_WIFI_CFG_KEY_AP_PASS = "ap_pass";
 
-static const char *LOG_TAG = "A_WIFI";
+static const char *LOG_TAG = "a_wifi";
 
 static void app_netif_wifi_event_handler(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data);
 

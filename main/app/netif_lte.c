@@ -25,7 +25,7 @@
 #define LTE_DTR_PIN       CONFIG_APP_NETIF_LTE_DTR_GPIO
 #define LTE_APN           CONFIG_APP_NETIF_LTE_APN
 
-static const char* LOG_TAG = "A_LTE";
+static const char* LOG_TAG = "a_lte";
 
 typedef struct {
     QueueHandle_t uart_rx_queue;
