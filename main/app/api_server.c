@@ -31,7 +31,10 @@ int app_api_server_init(void) {
     ESP_LOGI(LOG_TAG, "Starting httpd...");
 
     httpd_config_t httpd_config = HTTPD_DEFAULT_CONFIG();
-    s_app_api_handle            = NULL;
+
+    httpd_config.uri_match_fn = httpd_uri_match_wildcard;
+
+    s_app_api_handle = NULL;
 
     if (httpd_start(&s_app_api_handle, &httpd_config) != ESP_OK) {
         return -1;
