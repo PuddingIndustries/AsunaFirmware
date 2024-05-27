@@ -1,5 +1,12 @@
 #include "cellular_platform.h"
 
+typedef struct {
+    void  (*thread_code)(void*);
+    void* argument;
+} Platform_ThreadDef_t;
+
+static void Platform_ThreadWrapper(void* arguments);
+
 bool PlatformMutex_Create(PlatformMutex_t* pNewMutex, bool recursive) {
     pNewMutex->bRecursive = recursive;
 
@@ -53,10 +60,30 @@ void PlatformMutex_Unlock(PlatformMutex_t* pMutex) {
 }
 
 bool Platform_CreateDetachedThread(void (*threadRoutine)(void*), void* pArgument, int32_t priority, size_t stackSize) {
-    BaseType_t ret = xTaskCreate(threadRoutine, "CEL", stackSize, pArgument, priority, NULL);
+    /* Note: this will be free'd in Platform_ThreadWrapper() */
+    Platform_ThreadDef_t* thread_def = Platform_Malloc(sizeof(Platform_ThreadDef_t));
+    if (thread_def == NULL) {
+        return false;
+    }
+
+    thread_def->thread_code = threadRoutine;
+    thread_def->argument    = pArgument;
+
+    BaseType_t ret = xTaskCreate(Platform_ThreadWrapper, "CEL", stackSize, thread_def, priority, NULL);
     if (ret != pdPASS) {
+        Platform_Free(thread_def);
         return false;
     }
 
     return true;
+}
+
+static void Platform_ThreadWrapper(void* arguments) {
+    Platform_ThreadDef_t* thread_def = arguments;
+
+    /* Run the task code. */
+    thread_def->thread_code(thread_def->argument);
+
+    Platform_Free(thread_def);
+    vTaskDelete(NULL);
 }
