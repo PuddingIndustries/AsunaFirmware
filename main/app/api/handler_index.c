@@ -8,10 +8,6 @@
 /* App */
 #include "app/api/handler_index.h"
 
-int app_api_handler_index_init(void) {
-    return 0;
-}
-
 static esp_err_t app_api_handler_index_get(httpd_req_t *req) {
     httpd_resp_set_hdr(req, "Location", "/static/index.html");
     httpd_resp_set_status(req, "302 Found");
@@ -19,7 +15,7 @@ static esp_err_t app_api_handler_index_get(httpd_req_t *req) {
     return ESP_OK;
 }
 
-const httpd_uri_t app_api_handler_index_uri = {
+const httpd_uri_t app_api_handler_index_get_uri = {
     .uri      = "/",
     .method   = HTTP_GET,
     .handler  = app_api_handler_index_get,

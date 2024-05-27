@@ -142,7 +142,7 @@ static void app_netif_lte_comm_task(void* arguments) {
 static CellularCommInterfaceError_t app_netif_lte_comm_open(CellularCommInterfaceReceiveCallback_t receiveCallback,
                                                             void*                                  pUserData,
                                                             CellularCommInterfaceHandle_t* pCommInterfaceHandle) {
-    ESP_LOGI(LOG_TAG, "Comm open");
+    ESP_LOGD(LOG_TAG, "LTE comm open");
 
     app_netif_lte_ctx_t* ctx = malloc(sizeof(app_netif_lte_ctx_t));
     if (ctx == NULL) {

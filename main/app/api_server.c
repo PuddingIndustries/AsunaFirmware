@@ -6,6 +6,7 @@
 #include "esp_log.h"
 
 /* App */
+#include "app/api/config/handler_wifi.h"
 #include "app/api/handler_index.h"
 #include "app/api/handler_static.h"
 #include "app/api_server.h"
@@ -19,8 +20,10 @@ typedef struct {
 static const char *LOG_TAG = "asuna_httpsrv";
 
 static const app_api_server_handler_t s_app_uri_list[] = {
-    {.name = "INDEX", .init = app_api_handler_index_init, .uri = &app_api_handler_index_uri},
-    {.name = "STATIC", .init = app_api_handler_static_init, .uri = &app_api_handler_static_uri},
+    {.name = "index_get", .init = NULL, .uri = &app_api_handler_index_get_uri},
+    {.name = "static_get", .init = NULL, .uri = &app_api_handler_static_get_uri},
+    {.name = "config_wifi_get", .init = NULL, .uri = &app_api_config_handler_wifi_get_uri},
+    {.name = "config_wifi_post", .init = NULL, .uri = &app_api_config_handler_wifi_post_uri},
 };
 
 static httpd_handle_t s_app_api_handle = NULL;
@@ -43,16 +46,19 @@ int app_api_server_init(void) {
     size_t handler_count = sizeof(s_app_uri_list) / sizeof(s_app_uri_list[0]);
 
     for (size_t i = 0; i < handler_count; i++) {
-        if (s_app_uri_list[i].init() != 0) {
-            ESP_LOGE(LOG_TAG, "Failed to initialize URI handler %s.", s_app_uri_list[i].name);
+        const app_api_server_handler_t *handler = &s_app_uri_list[i];
+        if (handler->init != NULL) {
+            if (s_app_uri_list[i].init() != 0) {
+                ESP_LOGE(LOG_TAG, "Failed to initialize URI handler %s.", handler->name);
 
-            ret = -1;
+                ret = -1;
 
-            goto deinit_server_exit;
+                goto deinit_server_exit;
+            }
         }
 
-        if (httpd_register_uri_handler(s_app_api_handle, s_app_uri_list[i].uri) != ESP_OK) {
-            ESP_LOGE(LOG_TAG, "Failed to register URI handler %s.", s_app_uri_list[i].name);
+        if (httpd_register_uri_handler(s_app_api_handle, handler->uri) != ESP_OK) {
+            ESP_LOGE(LOG_TAG, "Failed to register URI handler %s.", handler->name);
 
             ret = -2;
 

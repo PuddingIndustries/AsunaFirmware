@@ -7,13 +7,13 @@ menu "Application Specific Configuration"
 
     config APP_NETIF_LTE_TX_GPIO
         int "LTE module TX pin number"
-        default 2
+        default 7
         help
             Select the pin number for LTE module.
 
     config APP_NETIF_LTE_RX_GPIO
         int "LTE module RX pin number"
-        default 3
+        default 6
         help
             Select the pin number for LTE module.
 

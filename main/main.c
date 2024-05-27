@@ -18,6 +18,7 @@
 #include "app/netif_common.h"
 #include "app/netif_lte.h"
 #include "app/netif_wifi.h"
+#include "app/vfs_common.h"
 
 static const char *LOG_TAG = "asuna_main";
 
@@ -30,6 +31,12 @@ void app_main(void) {
     ESP_ERROR_CHECK(ret);
 
     ESP_LOGI(LOG_TAG, "Project Asuna -- Initializing...");
+
+    if (app_vfs_common_init() != 0) {
+        ESP_LOGE(LOG_TAG, "Failed to initialize VFS.");
+
+        goto dead_loop;
+    }
 
     if (app_netif_init() != 0) {
         ESP_LOGE(LOG_TAG, "Failed to initialize network interfaces.");
