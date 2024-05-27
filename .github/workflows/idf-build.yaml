@@ -6,7 +6,7 @@ jobs:
   idf-build:
     runs-on: ubuntu-latest
     container:
-      image: "espressif/idf"
+      image: "espressif/idf:v5.2.1"
     steps:
-      - name: build application
+      - name: Build Application
         run: idf.py build
