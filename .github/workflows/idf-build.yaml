@@ -1,0 +1,12 @@
+name: IDF Build
+on:
+  push:
+    branches: [ master ]
+jobs:
+  idf-build:
+    runs-on: ubuntu-latest
+    container:
+      image: "espressif/idf"
+    steps:
+      - name: build application
+        run: idf.py build
