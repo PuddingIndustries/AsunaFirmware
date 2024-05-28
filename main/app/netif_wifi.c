@@ -1,6 +1,7 @@
 #include <string.h>
 
 #include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
 #include "freertos/task.h"
 
 /* IDF */
@@ -14,24 +15,42 @@
 #include "app/netif_wifi.h"
 
 #define APP_NETIF_WIFI_NVS_NAMESPACE "a_netif_wifi"
+#define APP_NETIF_WIFI_NVS_VERSION   1 /* DO NOT CHANGE THIS VALUE UNLESS THERE IS A STRUCTURE UPDATE */
 
 #define APP_NETIF_WIFI_AP_SSID_PREFIX  "ASUNA_"
 #define APP_NETIF_WIFI_AP_DEFAULT_CHAN 1
 #define APP_NETIF_WIFI_AP_MAX_CLIENTS  8
 #define APP_NETIF_WIFI_AP_SUPPORT_WPA3 1
 
-static const char *APP_NETIF_WIFI_CFG_KEY_AP_CHAN = "ap_chan";
-static const char *APP_NETIF_WIFI_CFG_KEY_AP_SSID = "ap_ssid";
-static const char *APP_NETIF_WIFI_CFG_KEY_AP_PASS = "ap_pass";
+#define APP_NETIF_WIFI_STA_DEFAULT_SSID "SSID"
+#define APP_NETIF_WIFI_STA_DEFAULT_PASS "PASSWORD"
+#define APP_NETIF_WIFI_STA_AUTH_THRESH  WIFI_AUTH_OPEN
+#define APP_NETIF_WIFI_STA_MAX_RETRIES  10
+
+static const char *APP_NETIF_WIFI_CFG_KEY_FLAG        = "cfg_valid";
+static const char *APP_NETIF_WIFI_CFG_KEY_AP_ENABLED  = "ap_enabled";
+static const char *APP_NETIF_WIFI_CFG_KEY_AP_CHAN     = "ap_chan";
+static const char *APP_NETIF_WIFI_CFG_KEY_AP_SSID     = "ap_ssid";
+static const char *APP_NETIF_WIFI_CFG_KEY_AP_PASS     = "ap_pass";
+static const char *APP_NETIF_WIFI_CFG_KEY_STA_ENABLED = "sta_enabled";
+static const char *APP_NETIF_WIFI_CFG_KEY_STA_SSID    = "sta_ssid";
+static const char *APP_NETIF_WIFI_CFG_KEY_STA_PASS    = "sta_pass";
 
 static const char *LOG_TAG = "asuna_wifi";
 
+static SemaphoreHandle_t s_netif_wifi_cfg_semphr = NULL;
+
+static int  app_netif_wifi_driver_init(const app_netif_wifi_config_t *app_cfg);
+static int  app_netif_wifi_driver_deinit(void);
+static void app_netif_wifi_manager_task(void *arguments);
 static void app_netif_wifi_event_handler(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data);
 
 int app_netif_wifi_init(void) {
+    int ret = 0;
+
     ESP_LOGI(LOG_TAG, "Initializing...");
 
-    wifi_init_config_t           cfg = WIFI_INIT_CONFIG_DEFAULT();
+    const wifi_init_config_t     cfg = WIFI_INIT_CONFIG_DEFAULT();
     esp_event_handler_instance_t instance_any_id;
 
     ESP_ERROR_CHECK(esp_wifi_init(&cfg));
@@ -42,87 +61,277 @@ int app_netif_wifi_init(void) {
     ESP_ERROR_CHECK(esp_event_handler_instance_register(WIFI_EVENT, ESP_EVENT_ANY_ID, &app_netif_wifi_event_handler,
                                                         NULL, &instance_any_id));
 
-    nvs_handle_t wifi_cfg_handle;
-    ESP_ERROR_CHECK(nvs_open(APP_NETIF_WIFI_NVS_NAMESPACE, NVS_READWRITE, &wifi_cfg_handle));
-
-    char    ap_ssid[32];
-    char    ap_pass[64];
-    uint8_t ap_chan;
-
-    size_t ap_ssid_len = 32;
-    size_t ap_pass_len = 64;
-
-    /* ---- Load / Generate Channel ---- */
-    if (nvs_get_u8(wifi_cfg_handle, APP_NETIF_WIFI_CFG_KEY_AP_CHAN, &ap_chan) != ESP_OK) {
-        ESP_LOGW(LOG_TAG, "Setting channel to default (%d)", APP_NETIF_WIFI_AP_DEFAULT_CHAN);
-        ESP_ERROR_CHECK(nvs_set_u8(wifi_cfg_handle, APP_NETIF_WIFI_CFG_KEY_AP_CHAN, APP_NETIF_WIFI_AP_DEFAULT_CHAN));
+    s_netif_wifi_cfg_semphr = xSemaphoreCreateBinary();
+    if (s_netif_wifi_cfg_semphr == NULL) {
+        ESP_LOGE(LOG_TAG, "Failed to create WiFi config semaphore.");
+        return -1;
     }
 
-    ESP_ERROR_CHECK(nvs_get_u8(wifi_cfg_handle, APP_NETIF_WIFI_CFG_KEY_AP_CHAN, &ap_chan));
+    xSemaphoreGive(s_netif_wifi_cfg_semphr);
 
-    /* ---- Load / Generate SSID based on AP MAC ---- */
+    app_netif_wifi_config_t app_cfg;
+    if (app_netif_wifi_config_get(&app_cfg) != 0) {
+        ESP_LOGW(LOG_TAG, "Configuration invalid, restore to default...");
+        app_netif_wifi_config_init(&app_cfg);
 
-    if (nvs_get_str(wifi_cfg_handle, APP_NETIF_WIFI_CFG_KEY_AP_SSID, NULL, &ap_ssid_len) != ESP_OK) {
-        uint8_t ap_mac[6];
+        if (app_netif_wifi_config_set(&app_cfg) != 0) {
+            ESP_LOGE(LOG_TAG, "Configuration validation failed...");
+            ret = -2;
 
-        ESP_ERROR_CHECK(esp_wifi_get_mac(WIFI_IF_AP, ap_mac));
+            goto deinit_semphr_exit;
+        }
 
-        snprintf(ap_ssid, 32, APP_NETIF_WIFI_AP_SSID_PREFIX "%02X%02X%02X", ap_mac[3], ap_mac[4], ap_mac[5]);
-        ESP_LOGW(LOG_TAG, "Creating default AP SSID: %s", ap_ssid);
-
-        ESP_ERROR_CHECK(nvs_set_str(wifi_cfg_handle, APP_NETIF_WIFI_CFG_KEY_AP_SSID, ap_ssid));
+        ESP_LOGW(LOG_TAG, "Default AP SSID: %s, Password: %s", app_cfg.ap_config.ssid, app_cfg.ap_config.pass);
     }
-
-    ESP_ERROR_CHECK(nvs_get_str(wifi_cfg_handle, APP_NETIF_WIFI_CFG_KEY_AP_SSID, ap_ssid, &ap_ssid_len));
-
-    /* ---- Load / Generate Password ---- */
-
-    if (nvs_get_str(wifi_cfg_handle, APP_NETIF_WIFI_CFG_KEY_AP_PASS, NULL, &ap_pass_len) != ESP_OK) {
-        uint32_t rand_pass = esp_random();
-        uint8_t  pass_buf[4];
-
-        pass_buf[0] = (rand_pass >> 24U) & 0xFFU;
-        pass_buf[1] = (rand_pass >> 16U) & 0xFFU;
-        pass_buf[2] = (rand_pass >> 8U) & 0xFFU;
-        pass_buf[3] = (rand_pass >> 0U) & 0xFFU;
-
-        snprintf(ap_pass, 64, "%02x%02x%02x%02x", pass_buf[0], pass_buf[1], pass_buf[2], pass_buf[3]);
-        ESP_LOGW(LOG_TAG, "Creating default AP password: %s", ap_pass);
-
-        ESP_ERROR_CHECK(nvs_set_str(wifi_cfg_handle, APP_NETIF_WIFI_CFG_KEY_AP_PASS, ap_pass));
-    }
-
-    ESP_ERROR_CHECK(nvs_get_str(wifi_cfg_handle, APP_NETIF_WIFI_CFG_KEY_AP_PASS, ap_pass, &ap_pass_len));
-
-    /* ---- Commit configuration changes ---- */
-    nvs_commit(wifi_cfg_handle);
-    nvs_close(wifi_cfg_handle);
 
     /* ---- Initialize WiFi drivers ---- */
+    if (app_netif_wifi_driver_init(&app_cfg) != 0) {
+        ESP_LOGE(LOG_TAG, "Failed to initialize WiFi driver.");
 
-    wifi_config_t wifi_config = {
-        .ap =
-            {
-#if APP_NETIF_WIFI_AP_SUPPORT_WPA3
-                .authmode    = WIFI_AUTH_WPA3_PSK,
-                .sae_pwe_h2e = WPA3_SAE_PWE_BOTH,
-#else
-                .authmode = WIFI_AUTH_WPA2_PSK,
-#endif
-                .channel        = ap_chan,
-                .max_connection = APP_NETIF_WIFI_AP_MAX_CLIENTS,
-                .pmf_cfg        = {.capable = true, .required = true},
-            },
-    };
+        ret = -3;
+        goto deinit_semphr_exit;
+    }
 
-    strncpy((char *)wifi_config.ap.ssid, ap_ssid, 32);
-    strncpy((char *)wifi_config.ap.password, ap_pass, 64);
+    if (xTaskCreate(app_netif_wifi_manager_task, "WIFI_MGR", 1024, NULL, 2, NULL) != pdPASS) {
+        ESP_LOGE(LOG_TAG, "Failed to initialize WiFi manager task.");
 
-    ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_APSTA));
-    ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_AP, &wifi_config));
-    ESP_ERROR_CHECK(esp_wifi_start());
+        ret = -4;
+        goto deinit_wifi_exit;
+    }
+
+    return ret;
+
+deinit_wifi_exit:
+    app_netif_wifi_driver_deinit();
+
+deinit_semphr_exit:
+    vSemaphoreDelete(s_netif_wifi_cfg_semphr);
+
+    return ret;
+}
+
+int app_netif_wifi_config_get(app_netif_wifi_config_t *config) {
+    int ret = 0;
+
+    if (xSemaphoreTake(s_netif_wifi_cfg_semphr, portMAX_DELAY) != pdPASS) {
+        return -1;
+    }
+    /* ---- Create NVS handle ---- */
+    nvs_handle_t handle;
+    ESP_ERROR_CHECK(nvs_open(APP_NETIF_WIFI_NVS_NAMESPACE, NVS_READONLY, &handle));
+
+    /* ---- Check NVS data flag ---- */
+
+    uint8_t cfg_flag;
+    if (nvs_get_u8(handle, APP_NETIF_WIFI_CFG_KEY_FLAG, &cfg_flag) != ESP_OK) {
+        ret = -1;
+        goto release_lock_exit;
+    }
+
+    /* ?? Downgrade is not allowed ?? */
+    if (cfg_flag > APP_NETIF_WIFI_NVS_VERSION) {
+        ret = -2;
+        goto release_lock_exit;
+    }
+
+    /* TODO: Handle structure update. */
+
+    /* ---- Load configuration: ap_enabled ---- */
+    ESP_ERROR_CHECK(nvs_get_u8(handle, APP_NETIF_WIFI_CFG_KEY_AP_ENABLED, &config->ap_enabled));
+
+    /* ---- Load configuration: sta_enabled ---- */
+    ESP_ERROR_CHECK(nvs_get_u8(handle, APP_NETIF_WIFI_CFG_KEY_STA_ENABLED, &config->sta_enabled));
+
+    /* ---- Load configuration: ap_config.ssid ---- */
+    size_t str_len;
+    ESP_ERROR_CHECK(nvs_get_str(handle, APP_NETIF_WIFI_CFG_KEY_AP_SSID, NULL, &str_len));
+    if (str_len > sizeof(config->ap_config.ssid)) {
+        ret = -3;
+        goto close_exit;
+    }
+
+    ESP_ERROR_CHECK(nvs_get_str(handle, APP_NETIF_WIFI_CFG_KEY_AP_SSID, config->ap_config.ssid, &str_len));
+
+    /* ---- Load configuration: ap_config.pass ---- */
+    ESP_ERROR_CHECK(nvs_get_str(handle, APP_NETIF_WIFI_CFG_KEY_AP_PASS, NULL, &str_len));
+    if (str_len > sizeof(config->ap_config.pass)) {
+        ret = -3;
+        goto close_exit;
+    }
+
+    ESP_ERROR_CHECK(nvs_get_str(handle, APP_NETIF_WIFI_CFG_KEY_AP_PASS, config->ap_config.pass, &str_len));
+
+    /* ---- Load configuration: ap_config.chan ---- */
+    ESP_ERROR_CHECK(nvs_get_u8(handle, APP_NETIF_WIFI_CFG_KEY_AP_CHAN, &config->ap_config.chan));
+
+    /* ---- Load configuration: sta_config.ssid ---- */
+    ESP_ERROR_CHECK(nvs_get_str(handle, APP_NETIF_WIFI_CFG_KEY_STA_SSID, NULL, &str_len));
+    if (str_len > sizeof(config->sta_config.ssid)) {
+        ret = -3;
+        goto close_exit;
+    }
+    ESP_ERROR_CHECK(nvs_get_str(handle, APP_NETIF_WIFI_CFG_KEY_STA_SSID, config->sta_config.ssid, &str_len));
+
+    /* ---- Load configuration: sta_config.pass ---- */
+    ESP_ERROR_CHECK(nvs_get_str(handle, APP_NETIF_WIFI_CFG_KEY_STA_PASS, NULL, &str_len));
+    if (str_len > sizeof(config->sta_config.pass)) {
+        ret = -3;
+        goto close_exit;
+    }
+    ESP_ERROR_CHECK(nvs_get_str(handle, APP_NETIF_WIFI_CFG_KEY_STA_PASS, config->sta_config.pass, &str_len));
+
+/* ---- Close NVS handle ---- */
+close_exit:
+    nvs_close(handle);
+
+release_lock_exit:
+    xSemaphoreGive(s_netif_wifi_cfg_semphr);
+
+    return ret;
+}
+
+int app_netif_wifi_config_set(const app_netif_wifi_config_t *config) {
+    /* ---- Sanity checks ---- */
+    if (config->ap_enabled) {
+        if (config->ap_config.chan > 14 || config->ap_config.chan == 0) {
+            return -1;
+        }
+
+        if (strnlen(config->ap_config.ssid, sizeof(config->ap_config.ssid)) < 4) {
+            return -1;
+        }
+
+        if (strnlen(config->ap_config.pass, sizeof(config->ap_config.pass)) < 8) {
+            return -1;
+        }
+    }
+
+    if (config->sta_enabled) {
+        if (strnlen(config->sta_config.pass, sizeof(config->sta_config.pass)) < 4) {
+            return -2;
+        }
+
+        if (strnlen(config->sta_config.pass, sizeof(config->sta_config.pass)) < 8) {
+            return -2;
+        }
+    }
+
+    if (xSemaphoreTake(s_netif_wifi_cfg_semphr, portMAX_DELAY) != pdPASS) {
+        return -3;
+    }
+
+    /* ---- Create NVS handle ---- */
+    nvs_handle_t handle;
+    ESP_ERROR_CHECK(nvs_open(APP_NETIF_WIFI_NVS_NAMESPACE, NVS_READWRITE, &handle));
+
+    /* ---- Store configuration ---- */
+    ESP_ERROR_CHECK(nvs_set_u8(handle, APP_NETIF_WIFI_CFG_KEY_FLAG, APP_NETIF_WIFI_NVS_VERSION));
+
+    ESP_ERROR_CHECK(nvs_set_u8(handle, APP_NETIF_WIFI_CFG_KEY_AP_ENABLED, config->ap_enabled));
+    ESP_ERROR_CHECK(nvs_set_u8(handle, APP_NETIF_WIFI_CFG_KEY_STA_ENABLED, config->sta_enabled));
+
+    ESP_ERROR_CHECK(nvs_set_str(handle, APP_NETIF_WIFI_CFG_KEY_AP_SSID, config->ap_config.ssid));
+    ESP_ERROR_CHECK(nvs_set_str(handle, APP_NETIF_WIFI_CFG_KEY_AP_PASS, config->ap_config.pass));
+    ESP_ERROR_CHECK(nvs_set_u8(handle, APP_NETIF_WIFI_CFG_KEY_AP_CHAN, config->ap_config.chan));
+
+    ESP_ERROR_CHECK(nvs_set_str(handle, APP_NETIF_WIFI_CFG_KEY_STA_SSID, config->sta_config.ssid));
+    ESP_ERROR_CHECK(nvs_set_str(handle, APP_NETIF_WIFI_CFG_KEY_STA_PASS, config->sta_config.pass));
+
+    ESP_ERROR_CHECK(nvs_commit(handle));
+
+    nvs_close(handle);
+
+    xSemaphoreGive(s_netif_wifi_cfg_semphr);
 
     return 0;
+}
+
+void app_netif_wifi_config_init(app_netif_wifi_config_t *config) {
+    uint8_t ap_mac[6];
+
+    config->ap_enabled  = 1U;
+    config->sta_enabled = 0U;
+
+    ESP_ERROR_CHECK(esp_wifi_get_mac(WIFI_IF_AP, ap_mac));
+    snprintf(config->ap_config.ssid, sizeof(config->ap_config.ssid), APP_NETIF_WIFI_AP_SSID_PREFIX "%02X%02X%02X",
+             ap_mac[3], ap_mac[4], ap_mac[5]);
+
+    snprintf(config->ap_config.pass, sizeof(config->ap_config.pass), "%02X%02X%02X%02X", ap_mac[2], ap_mac[3],
+             ap_mac[4], ap_mac[5]);
+
+    snprintf((char *)config->sta_config.ssid, sizeof(config->sta_config.ssid), APP_NETIF_WIFI_STA_DEFAULT_SSID);
+    snprintf((char *)config->sta_config.pass, sizeof(config->sta_config.pass), APP_NETIF_WIFI_STA_DEFAULT_PASS);
+}
+
+static int app_netif_wifi_driver_init(const app_netif_wifi_config_t *app_cfg) {
+    ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_APSTA));
+
+    if (app_cfg->ap_enabled) {
+        wifi_config_t wifi_ap_config = {
+            .ap =
+                {
+#if APP_NETIF_WIFI_AP_SUPPORT_WPA3
+                    .authmode    = WIFI_AUTH_WPA3_PSK,
+                    .sae_pwe_h2e = WPA3_SAE_PWE_BOTH,
+#else
+                    .authmode = WIFI_AUTH_WPA2_PSK,
+#endif
+                    .channel        = app_cfg->ap_config.chan,
+                    .max_connection = APP_NETIF_WIFI_AP_MAX_CLIENTS,
+                    .pmf_cfg        = {.capable = true, .required = true},
+                },
+        };
+
+        strncpy((char *)wifi_ap_config.ap.ssid, app_cfg->ap_config.ssid, sizeof(wifi_ap_config.ap.ssid));
+        strncpy((char *)wifi_ap_config.ap.password, app_cfg->ap_config.pass, sizeof(wifi_ap_config.ap.password));
+
+        esp_err_t err = esp_wifi_set_config(WIFI_IF_AP, &wifi_ap_config);
+        if (err == ESP_ERR_INVALID_ARG) {
+            return -1;
+        }
+
+        ESP_ERROR_CHECK(err);
+    }
+
+    if (app_cfg->sta_enabled) {
+        wifi_config_t wifi_sta_config = {
+            .sta =
+                {
+                    .scan_method        = WIFI_ALL_CHANNEL_SCAN,
+                    .failure_retry_cnt  = APP_NETIF_WIFI_STA_MAX_RETRIES,
+                    .threshold.authmode = APP_NETIF_WIFI_STA_AUTH_THRESH,
+                    .sae_pwe_h2e        = WPA3_SAE_PWE_BOTH,
+                },
+        };
+
+        strncpy((char *)wifi_sta_config.ap.ssid, app_cfg->ap_config.ssid, sizeof(wifi_sta_config.ap.ssid));
+        strncpy((char *)wifi_sta_config.ap.password, app_cfg->ap_config.pass, sizeof(wifi_sta_config.ap.password));
+
+        esp_err_t err = esp_wifi_set_config(WIFI_IF_STA, &wifi_sta_config);
+        if (err == ESP_ERR_INVALID_ARG) {
+            return -1;
+        }
+
+        ESP_ERROR_CHECK(err);
+    }
+
+    if (app_cfg->ap_enabled || app_cfg->sta_enabled) {
+        ESP_ERROR_CHECK(esp_wifi_start());
+    }
+
+    return 0;
+}
+
+static int app_netif_wifi_driver_deinit(void) {
+    ESP_ERROR_CHECK(esp_wifi_stop());
+    return 0;
+}
+
+static void app_netif_wifi_manager_task(void *arguments) {
+    for (;;) {
+        /* -- */
+        vTaskSuspend(NULL);
+    }
 }
 
 static void app_netif_wifi_event_handler(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data) {

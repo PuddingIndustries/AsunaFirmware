@@ -20,6 +20,10 @@ static const app_mime_type_t s_app_mime_types[] = {
 };
 
 static esp_err_t app_api_handler_static_get(httpd_req_t *req) {
+    (void)s_app_mime_types;
+
+    httpd_resp_set_status(req, "404 Not Found");
+    httpd_resp_send(req, "Try later...", HTTPD_RESP_USE_STRLEN);
     return ESP_OK;
 }
 
