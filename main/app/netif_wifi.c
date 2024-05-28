@@ -291,6 +291,8 @@ static int app_netif_wifi_driver_init(const app_netif_wifi_config_t *app_cfg) {
         }
 
         ESP_ERROR_CHECK(err);
+
+        ESP_ERROR_CHECK(esp_wifi_set_bandwidth(WIFI_IF_AP, WIFI_BW_HT20));
     }
 
     if (app_cfg->sta_enabled) {
