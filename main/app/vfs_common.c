@@ -13,9 +13,9 @@
 static const char *LOG_TAG = "asuna_vfs";
 
 int app_vfs_common_init(void) {
-    esp_err_t err;
+    esp_err_t err = ESP_OK;
 
-    esp_vfs_littlefs_conf_t conf = {
+    const esp_vfs_littlefs_conf_t conf = {
         .base_path              = APP_VFS_MP,
         .partition_label        = APP_VFS_LABEL,
         .format_if_mount_failed = true,

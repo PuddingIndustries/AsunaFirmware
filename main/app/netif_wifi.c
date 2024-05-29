@@ -111,14 +111,21 @@ deinit_semphr_exit:
 }
 
 int app_netif_wifi_config_get(app_netif_wifi_config_t *config) {
-    int ret = 0;
+    int       ret = 0;
+    esp_err_t err;
 
     if (xSemaphoreTake(s_netif_wifi_cfg_semphr, portMAX_DELAY) != pdPASS) {
         return -1;
     }
     /* ---- Create NVS handle ---- */
     nvs_handle_t handle;
-    ESP_ERROR_CHECK(nvs_open(APP_NETIF_WIFI_NVS_NAMESPACE, NVS_READONLY, &handle));
+    err = nvs_open(APP_NETIF_WIFI_NVS_NAMESPACE, NVS_READONLY, &handle);
+    if (err == ESP_ERR_NVS_NOT_FOUND) {
+        ret = -1;
+        goto release_lock_exit;
+    }
+
+    ESP_ERROR_CHECK(err);
 
     /* ---- Check NVS data flag ---- */
 
@@ -249,14 +256,15 @@ int app_netif_wifi_config_set(const app_netif_wifi_config_t *config) {
 void app_netif_wifi_config_init(app_netif_wifi_config_t *config) {
     uint8_t ap_mac[6];
 
-    config->ap_enabled  = 1U;
-    config->sta_enabled = 0U;
+    config->ap_enabled     = 1U;
+    config->sta_enabled    = 0U;
+    config->ap_config.chan = APP_NETIF_WIFI_AP_DEFAULT_CHAN;
 
     ESP_ERROR_CHECK(esp_wifi_get_mac(WIFI_IF_AP, ap_mac));
     snprintf(config->ap_config.ssid, sizeof(config->ap_config.ssid), APP_NETIF_WIFI_AP_SSID_PREFIX "%02X%02X%02X",
              ap_mac[3], ap_mac[4], ap_mac[5]);
 
-    snprintf(config->ap_config.pass, sizeof(config->ap_config.pass), "%02X%02X%02X%02X", ap_mac[2], ap_mac[3],
+    snprintf(config->ap_config.pass, sizeof(config->ap_config.pass), "%02x%02x%02x%02x", ap_mac[2], ap_mac[3],
              ap_mac[4], ap_mac[5]);
 
     snprintf((char *)config->sta_config.ssid, sizeof(config->sta_config.ssid), APP_NETIF_WIFI_STA_DEFAULT_SSID);
