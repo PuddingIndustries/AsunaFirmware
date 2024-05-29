@@ -7,6 +7,7 @@ idf_component_register(SRCS
     "app/netif_lte.c"
     "app/netif_wifi.c"
     "app/vfs_common.c"
+    "app/app_console.c"
     "main.c"
 
 INCLUDE_DIRS
