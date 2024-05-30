@@ -23,7 +23,6 @@
 #define LTE_TX_PIN        CONFIG_APP_NETIF_LTE_TX_GPIO
 #define LTE_RX_PIN        CONFIG_APP_NETIF_LTE_RX_GPIO
 #define LTE_DTR_PIN       CONFIG_APP_NETIF_LTE_DTR_GPIO
-#define LTE_APN           CONFIG_APP_NETIF_LTE_APN
 
 static const char* LOG_TAG = "asuna_lte";
 

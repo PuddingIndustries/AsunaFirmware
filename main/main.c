@@ -15,11 +15,11 @@
 
 /* App */
 #include "app/api_server.h"
+#include "app/console_common.h"
 #include "app/netif_common.h"
 #include "app/netif_lte.h"
 #include "app/netif_wifi.h"
 #include "app/vfs_common.h"
-#include "app/app_console.h"
 
 static const char *LOG_TAG = "asuna_main";
 
@@ -35,6 +35,12 @@ void app_main(void) {
 
     if (app_vfs_common_init() != 0) {
         ESP_LOGE(LOG_TAG, "Failed to initialize VFS.");
+
+        goto dead_loop;
+    }
+
+    if (app_console_init() != 0) {
+        ESP_LOGE(LOG_TAG, "Failed to initialize console.");
 
         goto dead_loop;
     }
@@ -57,12 +63,6 @@ void app_main(void) {
         goto dead_loop;
     }
 
-    if (app_console_init() != 0) {
-        ESP_LOGE(LOG_TAG, "Failed to initialize console.");
-
-        goto dead_loop;
-    }
-    
     if (app_netif_lte_init() != 0) {
         ESP_LOGE(LOG_TAG, "Failed to initialize LTE interface.");
 
