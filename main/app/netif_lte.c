@@ -34,11 +34,12 @@ typedef struct {
     void*                                  user_data;
 } app_netif_lte_ctx_t;
 
-static CellularHandle_t             s_cellular_handle = NULL;
-static CellularCommInterface_t      s_cellular_comm_interface;
+static CellularHandle_t        s_cellular_handle = NULL;
+static CellularCommInterface_t s_cellular_comm_interface;
 
 static void                         app_netif_lte_pin_init(void);
 static void                         app_netif_lte_reset(void);
+static void                         app_netif_lte_manager_task(void* arguments);
 static CellularCommInterfaceError_t app_netif_lte_comm_open(CellularCommInterfaceReceiveCallback_t receiveCallback,
                                                             void*                                  pUserData,
                                                             CellularCommInterfaceHandle_t* pCommInterfaceHandle);
@@ -68,25 +69,12 @@ int app_netif_lte_init(void) {
         return -1;
     }
 
-    CellularPlmnInfo_t network_info;
-
-    if (Cellular_GetRegisteredNetwork(s_cellular_handle, &network_info) != CELLULAR_SUCCESS) {
-        ESP_LOGE(LOG_TAG, "Failed to get network information");
+    if (xTaskCreate(app_netif_lte_manager_task, "A_LTE", 4096, s_cellular_handle, 3, NULL) != pdPASS) {
+        ESP_LOGE(LOG_TAG, "Failed to create LTE manager task.");
 
         return -2;
     }
 
-    ESP_LOGI(LOG_TAG, "MCC: %s, MNC: %s", network_info.mcc, network_info.mnc);
-
-    CellularSignalInfo_t signal_info;
-
-    if (Cellular_GetSignalInfo(s_cellular_handle, &signal_info) != CELLULAR_SUCCESS) {
-        ESP_LOGE(LOG_TAG, "Failed to get signal info");
-
-        return -3;
-    }
-
-    ESP_LOGI(LOG_TAG, "Signal info: rssi: %d, ber: %d", signal_info.rssi, signal_info.ber);
     ESP_LOGI(LOG_TAG, "Initialization completed.");
 
     return 0;
@@ -118,20 +106,42 @@ static void app_netif_lte_reset(void) {
     vTaskDelay(pdMS_TO_TICKS(100));
 }
 
+static void app_netif_lte_manager_task(void* arguments) {
+    CellularHandle_t handle = arguments;
+
+    for (;;) {
+        CellularSignalInfo_t signal_info;
+
+        CellularError_t err = Cellular_GetSignalInfo(handle, &signal_info);
+        if (err != CELLULAR_SUCCESS) {
+            ESP_LOGE(LOG_TAG, "Failed to get signal info: %d", err);
+        }
+
+        ESP_LOGI(LOG_TAG, "Signal info: rssi: %d, ber: %d", signal_info.rssi, signal_info.ber);
+
+        vTaskDelay(pdMS_TO_TICKS(30000));
+    }
+}
+
 static void app_netif_lte_comm_task(void* arguments) {
     app_netif_lte_ctx_t* ctx = arguments;
 
     uart_event_t event;
     for (;;) {
         if (xQueueReceive(ctx->uart_rx_queue, &event, portMAX_DELAY) == pdPASS) {
-            ESP_LOGD(LOG_TAG, "Received UART event.");
-
             switch (event.type) {
                 case UART_DATA:
+                    ESP_LOGD(LOG_TAG, "Received UART_DATA event.");
                     ctx->recv_callback(ctx->user_data, (CellularCommInterfaceHandle_t)ctx);
                     break;
-
+                case UART_FIFO_OVF:
+                    ESP_LOGD(LOG_TAG, "Received UART_FIFO_OVF event.");
+                    break;
+                case UART_FRAME_ERR:
+                    ESP_LOGD(LOG_TAG, "Received UART_FRAME_ERR event.");
+                    break;
                 default:
+                    ESP_LOGI(LOG_TAG, "Received unknown event: %d.", event.type);
                     break;
             }
         }
@@ -164,7 +174,7 @@ static CellularCommInterfaceError_t app_netif_lte_comm_open(CellularCommInterfac
     ctx->recv_callback = receiveCallback;
     ctx->user_data     = pUserData;
 
-    uart_driver_install(LTE_UART_NUM, LTE_UART_BUF_SIZE, LTE_UART_BUF_SIZE, 16, &ctx->uart_rx_queue, 0);
+    uart_driver_install(LTE_UART_NUM, LTE_UART_BUF_SIZE, LTE_UART_BUF_SIZE, 8, &ctx->uart_rx_queue, 0);
     uart_param_config(LTE_UART_NUM, &uart_config);
     uart_set_pin(LTE_UART_NUM, LTE_TX_PIN, LTE_RX_PIN, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE);
 
@@ -183,19 +193,20 @@ static CellularCommInterfaceError_t app_netif_lte_comm_open(CellularCommInterfac
 static CellularCommInterfaceError_t app_netif_lte_comm_send(CellularCommInterfaceHandle_t commInterfaceHandle,
                                                             const uint8_t* pData, uint32_t dataLength,
                                                             uint32_t timeoutMilliseconds, uint32_t* pDataSentLength) {
-    ESP_LOGD(LOG_TAG, "LTE command send: %ld bytes", dataLength);
+    ESP_LOGD(LOG_TAG, "LTE command send: %ld bytes.", dataLength);
 
     *pDataSentLength = 0;
 
-    if (uart_write_bytes(LTE_UART_NUM, pData, dataLength) != ESP_OK) {
+    *pDataSentLength = uart_write_bytes(LTE_UART_NUM, pData, dataLength);
+    if (*pDataSentLength != dataLength) {
+        ESP_LOGW(LOG_TAG, "LTE command transmit failed.");
         return IOT_COMM_INTERFACE_FAILURE;
     }
 
     if (uart_wait_tx_done(LTE_UART_NUM, pdMS_TO_TICKS(timeoutMilliseconds)) != ESP_OK) {
+        ESP_LOGW(LOG_TAG, "LTE command wait for TX done timed out.");
         return IOT_COMM_INTERFACE_TIMEOUT;
     }
-
-    *pDataSentLength = dataLength;
 
     return IOT_COMM_INTERFACE_SUCCESS;
 }
@@ -222,6 +233,7 @@ static CellularCommInterfaceError_t app_netif_lte_comm_recv(CellularCommInterfac
 
     int ret = uart_read_bytes(LTE_UART_NUM, pBuffer, rx_len, pdMS_TO_TICKS(timeoutMilliseconds));
     if (ret < 0) {
+        ESP_LOGE(LOG_TAG, "LTE command recv error: %d", ret);
         goto err_read;
     }
 
