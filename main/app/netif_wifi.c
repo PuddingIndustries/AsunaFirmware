@@ -27,6 +27,16 @@
 #define APP_NETIF_WIFI_STA_AUTH_THRESH  WIFI_AUTH_OPEN
 #define APP_NETIF_WIFI_STA_MAX_RETRIES  10
 
+typedef enum {
+    APP_NETIF_WIFI_MGR_CFG_RELOAD,
+    APP_NETIF_WIFI_MGR_STA_RECONNECT,
+} app_netif_wifi_queue_type_t;
+
+typedef struct {
+    app_netif_wifi_queue_type_t type;
+    void                       *parameter;
+} app_netif_wifi_queue_item_t;
+
 static const char *APP_NETIF_WIFI_CFG_KEY_FLAG        = "cfg_valid";
 static const char *APP_NETIF_WIFI_CFG_KEY_AP_ENABLED  = "ap_enabled";
 static const char *APP_NETIF_WIFI_CFG_KEY_AP_CHAN     = "ap_chan";
@@ -39,6 +49,7 @@ static const char *APP_NETIF_WIFI_CFG_KEY_STA_PASS    = "sta_pass";
 static const char *LOG_TAG = "asuna_wifi";
 
 static SemaphoreHandle_t s_netif_wifi_cfg_semphr = NULL;
+static QueueHandle_t     s_netif_wifi_mgr_queue  = NULL;
 
 static int  app_netif_wifi_driver_init(const app_netif_wifi_config_t *app_cfg);
 static int  app_netif_wifi_driver_deinit(void);
@@ -69,6 +80,12 @@ int app_netif_wifi_init(void) {
 
     xSemaphoreGive(s_netif_wifi_cfg_semphr);
 
+    s_netif_wifi_mgr_queue = xQueueCreate(4, sizeof(app_netif_wifi_queue_item_t));
+    if (s_netif_wifi_mgr_queue == NULL) {
+        ESP_LOGE(LOG_TAG, "Failed to create WiFi manager queue.");
+        goto deinit_semphr_exit;
+    }
+
     app_netif_wifi_config_t app_cfg;
     if (app_netif_wifi_config_get(&app_cfg) != 0) {
         ESP_LOGW(LOG_TAG, "Configuration invalid, restore to default...");
@@ -78,7 +95,7 @@ int app_netif_wifi_init(void) {
             ESP_LOGE(LOG_TAG, "Configuration validation failed...");
             ret = -2;
 
-            goto deinit_semphr_exit;
+            goto deinit_queue_exit;
         }
 
         ESP_LOGW(LOG_TAG, "Default AP SSID: %s, Password: %s", app_cfg.ap_config.ssid, app_cfg.ap_config.pass);
@@ -89,10 +106,10 @@ int app_netif_wifi_init(void) {
         ESP_LOGE(LOG_TAG, "Failed to initialize WiFi driver.");
 
         ret = -3;
-        goto deinit_semphr_exit;
+        goto deinit_queue_exit;
     }
 
-    if (xTaskCreate(app_netif_wifi_manager_task, "WIFI_MGR", 1024, NULL, 2, NULL) != pdPASS) {
+    if (xTaskCreate(app_netif_wifi_manager_task, "WIFI_MGR", 2048, NULL, 2, NULL) != pdPASS) {
         ESP_LOGE(LOG_TAG, "Failed to initialize WiFi manager task.");
 
         ret = -4;
@@ -103,6 +120,9 @@ int app_netif_wifi_init(void) {
 
 deinit_wifi_exit:
     app_netif_wifi_driver_deinit();
+
+deinit_queue_exit:
+    vQueueDelete(s_netif_wifi_mgr_queue);
 
 deinit_semphr_exit:
     vSemaphoreDelete(s_netif_wifi_cfg_semphr);
@@ -271,6 +291,32 @@ void app_netif_wifi_config_init(app_netif_wifi_config_t *config) {
     snprintf((char *)config->sta_config.pass, sizeof(config->sta_config.pass), APP_NETIF_WIFI_STA_DEFAULT_PASS);
 }
 
+int app_netif_wifi_config_reload(void) {
+    app_netif_wifi_queue_item_t evt = {
+        .type      = APP_NETIF_WIFI_MGR_CFG_RELOAD,
+        .parameter = NULL,
+    };
+
+    if (xQueueSend(s_netif_wifi_mgr_queue, &evt, portMAX_DELAY) != pdPASS) {
+        return -1;
+    }
+
+    return 0;
+}
+
+int app_netif_wifi_sta_reconnect(void) {
+    app_netif_wifi_queue_item_t evt = {
+        .type      = APP_NETIF_WIFI_MGR_STA_RECONNECT,
+        .parameter = NULL,
+    };
+
+    if (xQueueSend(s_netif_wifi_mgr_queue, &evt, portMAX_DELAY) != pdPASS) {
+        return -1;
+    }
+
+    return 0;
+}
+
 static int app_netif_wifi_driver_init(const app_netif_wifi_config_t *app_cfg) {
     ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_APSTA));
 
@@ -314,8 +360,8 @@ static int app_netif_wifi_driver_init(const app_netif_wifi_config_t *app_cfg) {
                 },
         };
 
-        strncpy((char *)wifi_sta_config.ap.ssid, app_cfg->ap_config.ssid, sizeof(wifi_sta_config.ap.ssid));
-        strncpy((char *)wifi_sta_config.ap.password, app_cfg->ap_config.pass, sizeof(wifi_sta_config.ap.password));
+        strncpy((char *)wifi_sta_config.sta.ssid, app_cfg->sta_config.ssid, sizeof(wifi_sta_config.sta.ssid));
+        strncpy((char *)wifi_sta_config.sta.password, app_cfg->sta_config.pass, sizeof(wifi_sta_config.sta.password));
 
         esp_err_t err = esp_wifi_set_config(WIFI_IF_STA, &wifi_sta_config);
         if (err == ESP_ERR_INVALID_ARG) {
@@ -338,14 +384,50 @@ static int app_netif_wifi_driver_deinit(void) {
 }
 
 static void app_netif_wifi_manager_task(void *arguments) {
+    app_netif_wifi_queue_item_t evt;
+
     for (;;) {
         /* -- */
-        vTaskSuspend(NULL);
+        if (xQueueReceive(s_netif_wifi_mgr_queue, &evt, portMAX_DELAY) != pdPASS) {
+            continue;
+        }
+
+        switch (evt.type) {
+            case APP_NETIF_WIFI_MGR_CFG_RELOAD: {
+                vTaskDelay(pdMS_TO_TICKS(500));
+
+                app_netif_wifi_config_t cfg;
+
+                app_netif_wifi_config_get(&cfg);
+                app_netif_wifi_driver_deinit();
+                app_netif_wifi_driver_init(&cfg);
+
+                break;
+            }
+
+            case APP_NETIF_WIFI_MGR_STA_RECONNECT: {
+                vTaskDelay(pdMS_TO_TICKS(1000));
+
+                esp_wifi_connect();
+
+                break;
+            }
+            default:
+                break;
+        }
     }
 }
 
 static void app_netif_wifi_event_handler(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data) {
     switch (event_id) {
+        case WIFI_EVENT_STA_START:
+            esp_wifi_connect();
+            break;
+
+        case WIFI_EVENT_STA_DISCONNECTED:
+            app_netif_wifi_sta_reconnect();
+            break;
+
         case WIFI_EVENT_AP_STACONNECTED: {
             const wifi_event_ap_staconnected_t *event = event_data;
             ESP_LOGI(LOG_TAG, "Station " MACSTR " joined, AID=%d.", MAC2STR(event->mac), event->aid);

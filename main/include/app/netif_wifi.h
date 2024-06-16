@@ -26,5 +26,7 @@ int  app_netif_wifi_init(void);
 int  app_netif_wifi_config_get(app_netif_wifi_config_t *config);
 int  app_netif_wifi_config_set(const app_netif_wifi_config_t *config);
 void app_netif_wifi_config_init(app_netif_wifi_config_t *config);
+int  app_netif_wifi_config_reload(void);
+int  app_netif_wifi_sta_reconnect(void);
 
 #endif  // APP_NETIF_WIFI_H

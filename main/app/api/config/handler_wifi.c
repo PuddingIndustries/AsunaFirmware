@@ -185,17 +185,18 @@ static esp_err_t app_api_config_handler_wifi_post(httpd_req_t *req) {
     if (payload == NULL) goto send_500;
 
     int ret = httpd_req_recv(req, payload, payload_size);
-    if (ret <= 0)  goto send_500;
+    if (ret <= 0) goto send_500;
 
     app_netif_wifi_config_t *cfg = app_api_config_handler_wifi_deserialize(payload);
-    if (cfg == NULL)  goto send_500;
+    if (cfg == NULL) goto send_500;
 
     ret = app_netif_wifi_config_set(cfg);
     free(cfg);
 
-    /* TODO: Reload WiFi configuration (restart AP/STA) */
+    if (ret != 0) goto send_500;
 
-    if (ret != 0)  goto send_500;
+    ret = app_netif_wifi_config_reload();
+    if (ret != 0) goto send_500;
 
     httpd_resp_set_type(req, "application/json");
     httpd_resp_send(req, "{}", HTTPD_RESP_USE_STRLEN);

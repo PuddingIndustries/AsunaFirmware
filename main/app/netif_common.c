@@ -24,12 +24,12 @@ static void app_netif_ip_event_cb(void *arg, esp_event_base_t event_base, int32_
     ESP_LOGD(LOG_TAG, "IP event! %" PRIu32, event_id);
 
     switch (event_id) {
-        case IP_EVENT_PPP_GOT_IP: {
+        case IP_EVENT_STA_GOT_IP: {
             const ip_event_got_ip_t *event = event_data;
             esp_netif_t             *netif = event->esp_netif;
             esp_netif_dns_info_t     dns_info;
 
-            ESP_LOGI(LOG_TAG, "PPP IP event: Acquired");
+            ESP_LOGI(LOG_TAG, "WiFi STA IP event: Acquired");
 
             ESP_LOGI(LOG_TAG, "IP     : " IPSTR, IP2STR(&event->ip_info.ip));
             ESP_LOGI(LOG_TAG, "Netmask: " IPSTR, IP2STR(&event->ip_info.netmask));
@@ -44,8 +44,8 @@ static void app_netif_ip_event_cb(void *arg, esp_event_base_t event_base, int32_
             break;
         }
 
-        case IP_EVENT_PPP_LOST_IP: {
-            ESP_LOGI(LOG_TAG, "PPP IP event: Lost");
+        case IP_EVENT_STA_LOST_IP: {
+            ESP_LOGI(LOG_TAG, "WiFi STA IP event: Lost");
 
             break;
         }
