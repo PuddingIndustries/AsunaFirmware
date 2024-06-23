@@ -5,6 +5,7 @@ idf_component_register(SRCS
     "app/api_server.c"
     "app/console/cmd_wifi.c"
     "app/console_common.c"
+    "app/gnss_server.c"
     "app/netif_common.c"
     "app/netif_lte.c"
     "app/netif_wifi.c"
