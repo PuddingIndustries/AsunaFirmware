@@ -13,6 +13,7 @@
 
 /* App */
 #include "app/console/cmd_wifi.h"
+#include "app/console/cmd_system.h"
 #include "app/console_common.h"
 
 #define APP_CONSOLE_PROMPT_STR "asuna"
@@ -28,6 +29,7 @@ int app_console_init(void) {
     repl_config.prompt = APP_CONSOLE_PROMPT_STR ">";
 
     esp_console_register_help_command();
+    register_system();
 
 #if CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG
     esp_console_dev_usb_serial_jtag_config_t hw_config = ESP_CONSOLE_DEV_USB_SERIAL_JTAG_CONFIG_DEFAULT();

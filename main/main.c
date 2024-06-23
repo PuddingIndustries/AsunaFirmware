@@ -15,6 +15,7 @@
 
 /* App */
 #include "app/api_server.h"
+#include "app/gnss_server.h"
 #include "app/console_common.h"
 #include "app/netif_common.h"
 #include "app/netif_lte.h"
@@ -59,6 +60,12 @@ void app_main(void) {
 
     if (app_netif_wifi_init() != 0) {
         ESP_LOGE(LOG_TAG, "Failed to initialize WiFi interface.");
+
+        goto dead_loop;
+    }
+
+    if (app_gnss_server_init() != 0) {
+        ESP_LOGE(LOG_TAG, "Failed to initialize gnss server.");
 
         goto dead_loop;
     }

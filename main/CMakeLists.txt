@@ -4,11 +4,14 @@ idf_component_register(SRCS
     "app/api/handler_static.c"
     "app/api_server.c"
     "app/console/cmd_wifi.c"
+    "app/console/cmd_system_common.c"
+    "app/console/cmd_system.c"
     "app/console_common.c"
     "app/netif_common.c"
     "app/netif_lte.c"
     "app/netif_wifi.c"
     "app/vfs_common.c"
+    "app/gnss_server.c"
     "main.c"
 
 INCLUDE_DIRS
