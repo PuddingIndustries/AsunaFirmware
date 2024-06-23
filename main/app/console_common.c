@@ -12,12 +12,19 @@
 #include "nvs_flash.h"
 
 /* App */
+#include "app/console/cmd_free.h"
+#include "app/console/cmd_version.h"
 #include "app/console/cmd_wifi.h"
 #include "app/console_common.h"
 
 #define APP_CONSOLE_PROMPT_STR "asuna"
 
 static const char* LOG_TAG = "asuna_console";
+
+static const esp_console_cmd_t* s_app_console_cmd_list[] = {
+    &app_console_cmd_verison,
+    &app_console_cmd_free,
+};
 
 int app_console_init(void) {
     ESP_LOGI(LOG_TAG, "Initializing...");
@@ -28,6 +35,12 @@ int app_console_init(void) {
     repl_config.prompt = APP_CONSOLE_PROMPT_STR ">";
 
     esp_console_register_help_command();
+
+    for (size_t i = 0; i < (sizeof(s_app_console_cmd_list) / sizeof(s_app_console_cmd_list[0])); i++) {
+        if (esp_console_cmd_register(s_app_console_cmd_list[i])) {
+            ESP_LOGE(LOG_TAG, "Failed to register command %s.", s_app_console_cmd_list[i]->command);
+        }
+    }
 
 #if CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG
     esp_console_dev_usb_serial_jtag_config_t hw_config = ESP_CONSOLE_DEV_USB_SERIAL_JTAG_CONFIG_DEFAULT();
