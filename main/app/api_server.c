@@ -7,23 +7,25 @@
 
 /* App */
 #include "app/api/config/handler_wifi.h"
+#include "app/api/gnss/handler_stream.h"
 #include "app/api/handler_index.h"
 #include "app/api/handler_static.h"
 #include "app/api_server.h"
 
 typedef struct {
     char              *name;
-    int                (*init)(void);
     const httpd_uri_t *uri;
+    int                (*init)(void);
 } app_api_server_handler_t;
 
 static const char *LOG_TAG = "asuna_httpsrv";
 
 static const app_api_server_handler_t s_app_uri_list[] = {
-    {.name = "index_get", .init = NULL, .uri = &app_api_handler_index_get_uri},
-    {.name = "static_get", .init = NULL, .uri = &app_api_handler_static_get_uri},
-    {.name = "config_wifi_get", .init = NULL, .uri = &app_api_config_handler_wifi_get_uri},
-    {.name = "config_wifi_post", .init = NULL, .uri = &app_api_config_handler_wifi_post_uri},
+    {.name = "index_get", .uri = &app_api_handler_index_get_uri, .init = NULL},
+    {.name = "static_get", .uri = &app_api_handler_static_get_uri, .init = NULL},
+    {.name = "config_wifi_get", .uri = &app_api_config_handler_wifi_get_uri, .init = NULL},
+    {.name = "config_wifi_post", .uri = &app_api_config_handler_wifi_post_uri, .init = NULL},
+    {.name = "gnss_stream_ws", .uri = &app_api_gnss_handler_stream_ws_uri, .init = NULL},
 };
 
 static httpd_handle_t s_app_api_handle = NULL;
