@@ -5,6 +5,7 @@
 #include "driver/uart.h"
 #include "esp_event.h"
 #include "esp_log.h"
+#include "freertos/list.h"
 #include "freertos/queue.h"
 #include "freertos/task.h"
 
@@ -28,9 +29,18 @@ typedef struct {
     nl_rtcm_t  rtcm_raw;
 } app_gnss_server_ctx_t;
 
+typedef struct {
+    app_gnss_cb_type_t type;
+    app_gnss_cb_t      cb;
+    void*              user_data;
+} app_gnss_consumer_t;
+
 static const char* LOG_TAG = "asuna_gnss";
 
+static List_t s_app_gnss_consumer_list;
+
 static void app_gnss_uart_event_task(void* parameters);
+static void app_gnss_dispatch(app_gnss_cb_type_t type, void* data);
 
 int app_gnss_server_init(void) {
     app_gnss_server_ctx_t* ctx = malloc(sizeof(app_gnss_server_ctx_t));
@@ -55,6 +65,8 @@ int app_gnss_server_init(void) {
     uart_driver_install(GNSS_UART_NUM, GNSS_UART_BUF_SIZE, GNSS_UART_BUF_SIZE, 8, &ctx->uart_rx_queue, 0);
     uart_param_config(GNSS_UART_NUM, &uart_config);
 
+    vListInitialise(&s_app_gnss_consumer_list);
+
     if (xTaskCreate(app_gnss_uart_event_task, "A_GNSS", 4096, ctx, 5, &ctx->uart_rx_task) != pdPASS) {
         ESP_LOGE(LOG_TAG, "Failed to create GNSS UART event task.");
         return -1;
@@ -64,31 +76,70 @@ int app_gnss_server_init(void) {
     return 0;
 }
 
+app_gnss_cb_handle_t app_gnss_server_cb_register(app_gnss_cb_type_t type, app_gnss_cb_t callback, void* handle) {
+    app_gnss_consumer_t* consumer = malloc(sizeof(app_gnss_consumer_t));
+    if (consumer == NULL) {
+        return NULL;
+    }
+
+    consumer->type      = type;
+    consumer->cb        = callback;
+    consumer->user_data = handle;
+
+    ListItem_t* item = malloc(sizeof(ListItem_t));
+    if (item == NULL) {
+        goto free_consumer_exit;
+    }
+
+    vListInitialiseItem(item);
+
+    item->xItemValue = (TickType_t)consumer;
+
+    vListInsert(&s_app_gnss_consumer_list, item);
+
+    return consumer;
+
+free_consumer_exit:
+    free(consumer);
+
+    return NULL;
+}
+
+void app_gnss_server_cb_unregister(app_gnss_cb_handle_t handle) {
+    ListItem_t*       item = listGET_HEAD_ENTRY(&s_app_gnss_consumer_list);
+    const ListItem_t* end  = listGET_END_MARKER(&s_app_gnss_consumer_list);
+
+    while (item != NULL) {
+        if (item == end) {
+            break;
+        }
+
+        app_gnss_consumer_t* consumer = (app_gnss_consumer_t*)item->xItemValue;
+
+        if (consumer == handle) {
+            listREMOVE_ITEM(item);
+            free(consumer);
+            free(item);
+
+            break;
+        }
+
+        item = listGET_NEXT(item);
+    }
+}
+
 static void app_gnss_uart_event_task(void* parameters) {
     int                    i;
     app_gnss_server_ctx_t* ctx = parameters;
     uart_event_t           event;
-    uint8_t                dtmp[GNSS_UART_BUF_SIZE];
 
     for (;;) {
-        if (xQueueReceive(ctx->uart_rx_queue, &event, portMAX_DELAY)) {
+        if (xQueueReceive(ctx->uart_rx_queue, &event, portMAX_DELAY) != pdPASS) {
+            continue;
+        }
+
+        if (event.type != UART_DATA) {
             switch (event.type) {
-                case UART_DATA: {
-                    uart_read_bytes(GNSS_UART_NUM, dtmp, event.size, portMAX_DELAY);
-
-                    for (i = 0; i < event.size; i++) {
-                        if (input_nmea(&ctx->nmea_raw, dtmp[i])) {
-                            ESP_LOGI(LOG_TAG, "NMEA[%c%c%c] received", ctx->nmea_raw.type[0], ctx->nmea_raw.type[1],
-                                     ctx->nmea_raw.type[2]);
-                        }
-
-                        if (nl_input_rtcm3_v2(&ctx->rtcm_raw, dtmp[i])) {
-                            ESP_LOGI(LOG_TAG, "RTCM[%d] received", ctx->rtcm_raw.type);
-                        }
-                    }
-                    break;
-                }
-
                 case UART_FIFO_OVF: {
                     ESP_LOGE(LOG_TAG, "Hardware FIFO overflowed...");
                     uart_flush_input(GNSS_UART_NUM);
@@ -101,6 +152,57 @@ static void app_gnss_uart_event_task(void* parameters) {
                     ESP_LOGW(LOG_TAG, "Unhandled UART event type: %d", event.type);
                     break;
             }
+
+            continue;
         }
+
+        /* Only UART data event exists from now on. */
+
+        size_t   gnss_data_size;
+        uint8_t* gnss_data_buf;
+        uart_get_buffered_data_len(GNSS_UART_NUM, &gnss_data_size);
+
+        gnss_data_buf = malloc(gnss_data_size);
+        if (gnss_data_buf == NULL) {
+            ESP_LOGE(LOG_TAG, "Failed to allocate GNSS content buffer.");
+            continue;
+        }
+
+        uart_read_bytes(GNSS_UART_NUM, gnss_data_buf, gnss_data_size, portMAX_DELAY);
+
+        for (i = 0; i < gnss_data_size; i++) {
+            if (input_nmea(&ctx->nmea_raw, gnss_data_buf[i])) {
+                ESP_LOGI(LOG_TAG, "NMEA[%c%c%c] received", ctx->nmea_raw.type[0], ctx->nmea_raw.type[1],
+                         ctx->nmea_raw.type[2]);
+            }
+
+            if (nl_input_rtcm3_v2(&ctx->rtcm_raw, gnss_data_buf[i])) {
+                ESP_LOGI(LOG_TAG, "RTCM[%d] received", ctx->rtcm_raw.type);
+            }
+        }
+
+        free(gnss_data_buf);
+
+        /* Dispatch */
+        app_gnss_dispatch(APP_GNSS_CB_FIX, NULL);
+        app_gnss_dispatch(APP_GNSS_CB_SAT, NULL);
+        app_gnss_dispatch(APP_GNSS_CB_RAW_NMEA, NULL);
+        app_gnss_dispatch(APP_GNSS_CB_RAW_RTCM, NULL);
+    }
+}
+
+static void app_gnss_dispatch(app_gnss_cb_type_t type, void* data) {
+    ListItem_t*       item = listGET_HEAD_ENTRY(&s_app_gnss_consumer_list);
+    const ListItem_t* end  = listGET_END_MARKER(&s_app_gnss_consumer_list);
+
+    while (item != NULL) {
+        if (item == end) {
+            break;
+        }
+
+        app_gnss_consumer_t* consumer = (app_gnss_consumer_t*)item->xItemValue;
+        consumer->cb(consumer->user_data, type, data);
+
+        item = listGET_NEXT(item);
     }
 }
