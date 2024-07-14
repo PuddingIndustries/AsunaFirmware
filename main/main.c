@@ -22,6 +22,14 @@
 #include "app/netif_wifi.h"
 #include "app/vfs_common.h"
 
+#define APP_ERROR_CHECK(x, m)                                 \
+    do {                                                      \
+        if (x != 0) {                                         \
+            ESP_LOGE(LOG_TAG, "Failed to initialize %s.", m); \
+            goto dead_loop;                                   \
+        }                                                     \
+    } while (0)
+
 static const char *LOG_TAG = "asuna_main";
 
 void app_main(void) {
@@ -34,48 +42,14 @@ void app_main(void) {
 
     ESP_LOGI(LOG_TAG, "Project Asuna -- Initializing...");
 
-    if (app_vfs_common_init() != 0) {
-        ESP_LOGE(LOG_TAG, "Failed to initialize VFS.");
-
-        goto dead_loop;
-    }
-
-    if (app_console_init() != 0) {
-        ESP_LOGE(LOG_TAG, "Failed to initialize console.");
-
-        goto dead_loop;
-    }
-
-    if (app_netif_init() != 0) {
-        ESP_LOGE(LOG_TAG, "Failed to initialize network interfaces.");
-
-        goto dead_loop;
-    }
-
-    if (app_api_server_init() != 0) {
-        ESP_LOGE(LOG_TAG, "Failed to initialize web server.");
-
-        goto dead_loop;
-    }
-
-    if (app_gnss_server_init() != 0) {
-        ESP_LOGE(LOG_TAG, "Failed to initialize GNSS server.");
-
-        goto dead_loop;
-    }
-
-    if (app_netif_wifi_init() != 0) {
-        ESP_LOGE(LOG_TAG, "Failed to initialize WiFi interface.");
-
-        goto dead_loop;
-    }
-
-    if (app_netif_lte_init() != 0) {
-        ESP_LOGE(LOG_TAG, "Failed to initialize LTE interface.");
-
-        goto dead_loop;
-    }
-
+    APP_ERROR_CHECK(app_vfs_common_init(), "virtual file system");
+    APP_ERROR_CHECK(app_console_init(), "console");
+    APP_ERROR_CHECK(app_netif_init(), "network interfaces");
+    APP_ERROR_CHECK(app_netif_wifi_init(), "WiFi interface");
+    APP_ERROR_CHECK(app_netif_lte_init(), "LTE interface");
+    APP_ERROR_CHECK(app_gnss_server_init(), "GNSS server");
+    APP_ERROR_CHECK(app_api_server_init(), "web server");
+    
     ESP_LOGI(LOG_TAG, "Initialization completed.");
 
 dead_loop:

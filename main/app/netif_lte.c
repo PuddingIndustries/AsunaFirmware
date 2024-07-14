@@ -34,7 +34,6 @@ typedef struct {
     void*                                  user_data;
 } app_netif_lte_ctx_t;
 
-static CellularHandle_t        s_cellular_handle = NULL;
 static CellularCommInterface_t s_cellular_comm_interface;
 
 static void                         app_netif_lte_pin_init(void);
@@ -63,13 +62,7 @@ int app_netif_lte_init(void) {
     s_cellular_comm_interface.send  = app_netif_lte_comm_send;
     s_cellular_comm_interface.recv  = app_netif_lte_comm_recv;
 
-    if (Cellular_Init(&s_cellular_handle, &s_cellular_comm_interface) != CELLULAR_SUCCESS) {
-        ESP_LOGE(LOG_TAG, "Failed to initialize celluar network.");
-
-        return -1;
-    }
-
-    if (xTaskCreate(app_netif_lte_manager_task, "A_LTE", 4096, s_cellular_handle, 3, NULL) != pdPASS) {
+    if (xTaskCreate(app_netif_lte_manager_task, "A_LTE", 4096, NULL, 3, NULL) != pdPASS) {
         ESP_LOGE(LOG_TAG, "Failed to create LTE manager task.");
 
         return -2;
@@ -107,12 +100,23 @@ static void app_netif_lte_reset(void) {
 }
 
 static void app_netif_lte_manager_task(void* arguments) {
-    CellularHandle_t handle = arguments;
+    CellularHandle_t handle;
+    bool             lte_initialized = false;
 
     for (;;) {
-        CellularSignalInfo_t signal_info;
+        if (!lte_initialized) {
+            if (Cellular_Init(&handle, &s_cellular_comm_interface) != CELLULAR_SUCCESS) {
+                ESP_LOGE(LOG_TAG, "Failed to initialize celluar network.");
 
-        CellularError_t err = Cellular_GetSignalInfo(handle, &signal_info);
+                vTaskDelay(pdMS_TO_TICKS(1000));
+                continue;
+            }
+
+            lte_initialized = true;
+        }
+
+        CellularSignalInfo_t signal_info;
+        CellularError_t      err = Cellular_GetSignalInfo(handle, &signal_info);
         if (err != CELLULAR_SUCCESS) {
             ESP_LOGE(LOG_TAG, "Failed to get signal info: %d", err);
         }
