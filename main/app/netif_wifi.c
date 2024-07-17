@@ -326,7 +326,11 @@ int app_netif_wifi_status_get(app_netif_wifi_status_t *status) {
     esp_err_t ret = esp_wifi_sta_get_ap_info(&record);
 
     if (ret == ESP_OK) {
-        status->sta_status.connected = true;
+        if (xEventGroupGetBits(s_netif_wifi_status_group) & BIT(APP_NETIF_WIFI_EVT_STA_CONNECTED)) {
+            status->sta_status.connected = true;
+        } else {
+            status->sta_status.connected = false;
+        }
 
         strncpy(status->sta_status.ssid, (const char *)record.ssid, sizeof(status->sta_status.ssid));
         memcpy(status->sta_status.bssid, record.bssid, sizeof(status->sta_status.bssid));
