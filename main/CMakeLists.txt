@@ -5,6 +5,7 @@ idf_component_register(SRCS
     "app/api/handler_static.c"
     "app/api_server.c"
     "app/console/cmd_free.c"
+    "app/console/cmd_ip.c"
     "app/console/cmd_version.c"
     "app/console/cmd_wifi.c"
     "app/console_common.c"
