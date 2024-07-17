@@ -28,5 +28,5 @@ const esp_console_cmd_t app_console_cmd_free = {
     .command = "free",
     .help    = "Get the current size of free heap memory",
     .hint    = NULL,
-    .func    = &app_console_free_func,
+    .func    = app_console_free_func,
 };

@@ -22,8 +22,9 @@
 static const char* LOG_TAG = "asuna_console";
 
 static const esp_console_cmd_t* s_app_console_cmd_list[] = {
-    &app_console_cmd_verison,
     &app_console_cmd_free,
+    &app_console_cmd_version,
+    &app_console_cmd_wifi,
 };
 
 int app_console_init(void) {

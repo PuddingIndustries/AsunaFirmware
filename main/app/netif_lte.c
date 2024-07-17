@@ -115,15 +115,7 @@ static void app_netif_lte_manager_task(void* arguments) {
             lte_initialized = true;
         }
 
-        CellularSignalInfo_t signal_info;
-        CellularError_t      err = Cellular_GetSignalInfo(handle, &signal_info);
-        if (err != CELLULAR_SUCCESS) {
-            ESP_LOGE(LOG_TAG, "Failed to get signal info: %d", err);
-        }
-
-        ESP_LOGI(LOG_TAG, "Signal info: rssi: %d, ber: %d", signal_info.rssi, signal_info.ber);
-
-        vTaskDelay(pdMS_TO_TICKS(30000));
+        vTaskSuspend(NULL);
     }
 }
 

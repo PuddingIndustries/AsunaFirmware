@@ -17,14 +17,14 @@
 static int app_console_version_func(int argc, char **argv) {
     const esp_app_desc_t *app_desc = esp_app_get_description();
 
-    printf("IDF Version:%s\r\n", esp_get_idf_version());
-    printf("App Version: %s\r\n", app_desc->version);
+    printf("IDF Version:%s\n", esp_get_idf_version());
+    printf("App Version: %s\n", app_desc->version);
     return 0;
 }
 
-const esp_console_cmd_t app_console_cmd_verison = {
+const esp_console_cmd_t app_console_cmd_version = {
     .command = "version",
     .help    = "Get version of chip and SDK",
     .hint    = NULL,
-    .func    = &app_console_version_func,
+    .func    = app_console_version_func,
 };
