@@ -1,0 +1,9 @@
+idf_component_register(
+    SRCS
+    "hal/llcc68_hal.c"
+    "llcc68_driver/src/llcc68.c"
+    "llcc68_driver/src/llcc68_driver_version.c"
+    INCLUDE_DIRS
+    "hal"
+    "llcc68_driver/src"
+)

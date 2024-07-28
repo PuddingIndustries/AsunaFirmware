@@ -10,3 +10,6 @@
 [submodule "components/freertos_cellular/air780e"]
 	path = components/freertos_cellular/air780e
 	url = https://github.com/imi415/FreeRTOS-Cellular-Interface-Reference-Luat-Air780E.git
+[submodule "components/lora_modem/llcc68_driver"]
+	path = components/lora_modem/llcc68_driver
+	url = https://github.com/Lora-net/llcc68_driver.git

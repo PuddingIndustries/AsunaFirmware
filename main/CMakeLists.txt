@@ -13,6 +13,7 @@ idf_component_register(SRCS
     "app/console/cmd_gnss_server_test.c"
     "app/console_common.c"
     "app/gnss_server.c"
+    "app/lora_server.c"
     "app/netif_common.c"
     "app/netif_lte.c"
     "app/netif_wifi.c"
