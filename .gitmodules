@@ -7,3 +7,6 @@
 [submodule "components/nl/src"]
 	path = components/nl/src
 	url = https://github.com/PuddingIndustries/GNSS_NL.git
+[submodule "components/lora_modem/llcc68_driver"]
+	path = components/lora_modem/llcc68_driver
+	url = https://github.com/Lora-net/llcc68_driver.git
