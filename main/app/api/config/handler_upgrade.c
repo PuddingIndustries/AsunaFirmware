@@ -31,6 +31,14 @@ static char *app_api_config_handler_upgrade_serialize(const app_version_t *versi
         if (version == NULL) goto del_root_exit;
         cJSON_AddItemToArray(versions_array, version);
 
+        cJSON *slot = cJSON_CreateNumber(i);
+        if (slot == NULL) goto del_root_exit;
+        cJSON_AddItemToObject(version, "slot", slot);
+
+        cJSON *in_use = cJSON_CreateBool(versions[i].is_current);
+        if (in_use == NULL) goto del_root_exit;
+        cJSON_AddItemToObject(version, "in_use", in_use);
+
         cJSON *name = cJSON_CreateString(versions[i].name);
         if (name == NULL) goto del_root_exit;
         cJSON_AddItemToObject(version, "name", name);
@@ -67,7 +75,7 @@ static esp_err_t app_api_config_handler_upgrade_get(httpd_req_t *req) {
     app_version_t versions[ARRAY_SIZE(s_ota_slots)];
 
     for (size_t i = 0; i < ARRAY_SIZE(s_ota_slots); i++) {
-        if (app_version_manager_get_status(APP_OTA_SLOT_0, &versions[i]) != 0) {
+        if (app_version_manager_get_status(s_ota_slots[i], &versions[i]) != 0) {
             goto send_500;
         }
     }
