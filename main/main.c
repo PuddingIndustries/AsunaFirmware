@@ -15,9 +15,12 @@
 #include "spi_flash_mmap.h"
 
 /* App */
+#include <app/lora_server.h>
+
 #include "app/api_server.h"
 #include "app/console_common.h"
 #include "app/gnss_server.h"
+#include "app/lora_server.h"
 #include "app/netif_common.h"
 #include "app/netif_lte.h"
 #include "app/netif_wifi.h"
@@ -53,6 +56,7 @@ void app_main(void) {
     APP_ERROR_CHECK(app_netif_wifi_init(), "WiFi interface");
     APP_ERROR_CHECK(app_netif_lte_init(), "LTE interface");
     APP_ERROR_CHECK(app_gnss_server_init(), "GNSS server");
+    APP_ERROR_CHECK(app_lora_server_init(), "LoRa server");
     APP_ERROR_CHECK(app_api_server_init(), "web server");
 
     ESP_LOGI(LOG_TAG, "Initialization completed.");
