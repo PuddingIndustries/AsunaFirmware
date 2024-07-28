@@ -18,6 +18,9 @@ int app_version_manager_init(void) {
 int app_version_manager_get_status(app_ota_slot_t slot, app_version_t *version) {
     const esp_app_desc_t  *app_desc = esp_app_get_description();
     const esp_partition_t *app_part = esp_ota_get_running_partition();
+    const esp_partition_t *nxt_part = esp_ota_get_next_update_partition(app_part);
+
+    /* TODO: Find the next partition and check for its version. */
 
     memset(version, 0, sizeof(app_version_t));
 
