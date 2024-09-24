@@ -8,13 +8,18 @@
 /* cJSON */
 #include "cJSON.h"
 
+/* Multipart Parser */
+#include "multipart_parser.h"
+
 /* App */
 #include "app/api/config/handler_upgrade.h"
 #include "app/version_manager.h"
 
-#define ARRAY_SIZE(x) (sizeof(x) / sizeof((x)[0]))
+#define APP_CONTENT_TYPE_MAX_LENGTH   512
+#define APP_CONTENT_TYPE_VALID_VALUE  ("Multipart/form-data")
+#define APP_CONTENT_TYPE_VALID_LENGTH (sizeof(APP_CONTENT_TYPE_VALID_VALUE) - 1)
 
-static const app_ota_slot_t s_ota_slots[] = {APP_OTA_SLOT_0, APP_OTA_SLOT_1};
+#define ARRAY_SIZE(x) (sizeof(x) / sizeof((x)[0]))
 
 static char *app_api_config_handler_upgrade_serialize(const app_version_t *versions, size_t num_slots) {
     char *ret = NULL;
@@ -72,15 +77,15 @@ del_root_exit:
 }
 
 static esp_err_t app_api_config_handler_upgrade_get(httpd_req_t *req) {
-    app_version_t versions[ARRAY_SIZE(s_ota_slots)];
+    app_version_t versions[APP_OTA_SLOT_END];
 
-    for (size_t i = 0; i < ARRAY_SIZE(s_ota_slots); i++) {
-        if (app_version_manager_get_status(s_ota_slots[i], &versions[i]) != 0) {
+    for (size_t i = 0; i < APP_OTA_SLOT_END; i++) {
+        if (app_version_manager_get_status(i, &versions[i]) != 0) {
             goto send_500;
         }
     }
 
-    char *json = app_api_config_handler_upgrade_serialize(versions, ARRAY_SIZE(s_ota_slots));
+    char *json = app_api_config_handler_upgrade_serialize(versions, APP_OTA_SLOT_END);
     if (json == NULL) {
         goto send_500;
     }
@@ -98,10 +103,51 @@ send_500:
     return ESP_FAIL;
 }
 
+static int upgrade_post_on_field_callback(multipart_parser *parser, const char *at, size_t length) {
+    return 0;
+}
+
+static int upgrade_post_on_data_callback(multipart_parser *parser, const char *at, size_t length) {
+    return 0;
+}
+
 static esp_err_t app_api_config_handler_upgrade_post(httpd_req_t *req) {
     /* TODO: Handle firmware upload. */
+    size_t content_type_length = httpd_req_get_hdr_value_len(req, "Content-Type");
+    if (content_type_length == 0 || content_type_length > APP_CONTENT_TYPE_MAX_LENGTH) {
+        goto send_500;
+    }
+
+    char *content_type = malloc(content_type_length + 1);
+    if (content_type == NULL) goto send_500;
+
+    if (strncmp(APP_CONTENT_TYPE_VALID_VALUE, content_type, APP_CONTENT_TYPE_VALID_LENGTH) != 0) {
+        goto free_header_send_400;
+    }
+
+    multipart_parser_settings parser_settings = {0};
+
+    parser_settings.on_header_field = upgrade_post_on_field_callback;
+    parser_settings.on_header_value = upgrade_post_on_data_callback;
+
+    multipart_parser *parser = multipart_parser_init(content_type, &parser_settings);
+
 
     return ESP_OK;
+
+free_header_send_400:
+    free(content_type);
+
+    httpd_resp_set_status(req, "400 Bad Request");
+    httpd_resp_send(req, "{}", HTTPD_RESP_USE_STRLEN);
+
+    return ESP_FAIL;
+
+send_500:
+    httpd_resp_set_status(req, "500 Internal Server Error");
+    httpd_resp_send(req, "{}", HTTPD_RESP_USE_STRLEN);
+
+    return ESP_FAIL;
 }
 
 const httpd_uri_t app_api_config_handler_upgrade_get_uri = {
