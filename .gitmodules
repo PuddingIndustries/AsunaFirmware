@@ -12,4 +12,4 @@
 	url = https://github.com/imi415/FreeRTOS-Cellular-Interface-Reference-Luat-Air780E.git
 [submodule "components/multipart_parser/src"]
 	path = components/multipart_parser/src
-	url = https://github.com/iafonov/multipart-parser-c.git
+	url = https://github.com/imi415/multipart-parser-c.git
