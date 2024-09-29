@@ -20,6 +20,7 @@
 #include "app/netif_common.h"
 #include "app/netif_lte.h"
 #include "app/netif_wifi.h"
+#include "app/version_manager.h"
 #include "app/vfs_common.h"
 
 #define APP_ERROR_CHECK(x, m)                                 \
@@ -43,13 +44,14 @@ void app_main(void) {
     ESP_LOGI(LOG_TAG, "Project Asuna -- Initializing...");
 
     APP_ERROR_CHECK(app_vfs_common_init(), "virtual file system");
+    APP_ERROR_CHECK(app_version_manager_init(), "version manager");
     APP_ERROR_CHECK(app_console_init(), "console");
     APP_ERROR_CHECK(app_netif_init(), "network interfaces");
     APP_ERROR_CHECK(app_netif_wifi_init(), "WiFi interface");
     APP_ERROR_CHECK(app_netif_lte_init(), "LTE interface");
     APP_ERROR_CHECK(app_gnss_server_init(), "GNSS server");
     APP_ERROR_CHECK(app_api_server_init(), "web server");
-    
+
     ESP_LOGI(LOG_TAG, "Initialization completed.");
 
 dead_loop:
