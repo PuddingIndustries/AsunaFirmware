@@ -21,12 +21,13 @@ static const char *LOG_TAG = "asuna_lora";
 
 #define APP_LORA_SERVER_SPI_HOST SPI2_HOST
 #define APP_LORA_SERVER_SPI_FREQ (4 * 1000 * 1000)
-#define APP_LORA_SERVER_PIN_SCK  35
-#define APP_LORA_SERVER_PIN_MOSI 36
-#define APP_LORA_SERVER_PIN_MISO 37
-#define APP_LORA_SERVER_PIN_CS   14
-#define APP_LORA_SERVER_PIN_RST  40
-#define APP_LORA_SERVER_PIN_BUSY 13
+#define APP_LORA_SERVER_PIN_SCK  12
+#define APP_LORA_SERVER_PIN_MOSI 11
+#define APP_LORA_SERVER_PIN_MISO 13
+#define APP_LORA_SERVER_PIN_CS   10
+#define APP_LORA_SERVER_PIN_RST  21
+#define APP_LORA_SERVER_PIN_INT  9
+#define APP_LORA_SERVER_PIN_BUSY 14
 
 static llcc68_hal_status_t app_llcc68_hal_spi_ops(void *handle, llcc68_hal_spi_transfer_t *xfer);
 static llcc68_hal_status_t app_llcc68_hal_pin_ops(void *handle, llcc68_hal_pin_t pin, bool value);
@@ -92,7 +93,7 @@ int app_lora_server_init(void) {
 
     s_app_lora_context.handle = spi_device;
 
-    xTaskCreate(app_lora_server_task, "A_LORA", 2048, &s_app_lora_context, 3, NULL);
+    xTaskCreate(app_lora_server_task, "A_LORA", 4096, &s_app_lora_context, 3, NULL);
 
     ESP_LOGI(LOG_TAG, "Initialization completed.");
 
@@ -181,6 +182,11 @@ static int app_lora_server_comms_init(void *context) {
     status = llcc68_set_dio3_as_tcxo_ctrl(context, LLCC68_TCXO_CTRL_3_3V, 500);
     if (status != LLCC68_STATUS_OK) {
         return -5;
+    }
+
+    status = llcc68_cal_img_in_mhz(context, 470, 510);
+    if (status != LLCC68_STATUS_OK) {
+        return -6;
     }
 
     return 0;
