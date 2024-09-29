@@ -7,3 +7,6 @@
 [submodule "components/nl/src"]
 	path = components/nl/src
 	url = https://github.com/PuddingIndustries/GNSS_NL.git
+[submodule "components/freertos_cellular/air780e"]
+	path = components/freertos_cellular/air780e
+	url = https://github.com/imi415/FreeRTOS-Cellular-Interface-Reference-Luat-Air780E.git

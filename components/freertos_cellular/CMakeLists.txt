@@ -1,8 +1,8 @@
 idf_component_register(SRCS
-    "ec800/source/cellular_ec800.c"
-    "ec800/source/cellular_ec800_api.c"
-    "ec800/source/cellular_ec800_urc_handler.c"
-    "ec800/source/cellular_ec800_wrapper.c"
+    "air780e/source/cellular_air780e.c"
+    "air780e/source/cellular_air780e_api.c"
+    "air780e/source/cellular_air780e_urc_handler.c"
+    "air780e/source/cellular_air780e_wrapper.c"
     "platform/src/cellular_platform.c"
     "src/source/cellular_3gpp_api.c"
     "src/source/cellular_3gpp_urc_handler.c"
@@ -12,7 +12,7 @@ idf_component_register(SRCS
     "src/source/cellular_pkthandler.c"
     "src/source/cellular_pktio.c"
 INCLUDE_DIRS
-    "ec800/source"
+    "air780e/source"
     "platform/include"
     "src/source/include"
     "src/source/include/common"
