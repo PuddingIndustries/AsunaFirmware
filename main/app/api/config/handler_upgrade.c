@@ -8,9 +8,6 @@
 /* cJSON */
 #include "cJSON.h"
 
-/* Multipart Parser */
-#include "multipart_parser.h"
-
 /* App */
 #include "app/api/config/handler_upgrade.h"
 #include "app/version_manager.h"
@@ -24,8 +21,7 @@
 static const char *LOG_TAG = "asuna_httpupd";
 
 typedef struct {
-    bool   firmware_payload;
-    size_t firmware_size;
+    char upgrade_session[32];
 } app_api_config_upgrade_state_t;
 
 static app_api_config_upgrade_state_t s_upgrade_state;
@@ -78,6 +74,11 @@ static char *app_api_config_handler_upgrade_serialize(const app_version_t *versi
         cJSON_AddItemToObject(version, "sha256", sha256);
     }
 
+    cJSON *ota_status = cJSON_CreateObject();
+    if (ota_status == NULL) goto del_root_exit;
+
+    cJSON_AddItemToObject(root, "ota_status", ota_status);
+
     ret = cJSON_PrintUnformatted(root);
 
 del_root_exit:
@@ -112,143 +113,12 @@ send_500:
     return ESP_FAIL;
 }
 
-static int upgrade_post_on_header_field_callback(multipart_parser *parser, const char *at, size_t length) {
-    ESP_LOGI(LOG_TAG, "hdr field: %.*s", length, at);
-    return 0;
-}
-
-static int upgrade_post_on_header_value_callback(multipart_parser *parser, const char *at, size_t length) {
-    ESP_LOGI(LOG_TAG, "hdr value: %.*s", length, at);
-
-    const char *needle = "application/octet-stream";
-
-    if (strncasecmp(at, needle, strlen(needle)) != 0) {
-        return 0;
-    }
-
-    s_upgrade_state.firmware_payload = true;
-
-    if (app_version_manager_ota_start() != 0) {
-        return -1;
-    }
-
-    return 0;
-}
-
-static int upgrade_post_on_part_data_callback(multipart_parser *parser, const char *at, size_t length) {
-    if (!s_upgrade_state.firmware_payload) {
-        return 0;
-    }
-
-    s_upgrade_state.firmware_size += length;
-
-    if (app_version_manager_ota_save((const uint8_t *)at, length) != 0) {
-        return -1;
-    }
-
-    return 0;
-}
-
 static esp_err_t app_api_config_handler_upgrade_post(httpd_req_t *req) {
-    size_t content_type_length = httpd_req_get_hdr_value_len(req, "Content-Type");
-    if (content_type_length == 0) {
-        goto send_500;
-    }
-
-    if (content_type_length > APP_UPGRADE_HEADER_MAX_LENGTH) {
-        content_type_length = APP_UPGRADE_HEADER_MAX_LENGTH;
-    }
-
-    char *content_type = malloc(content_type_length + 1);
-    if (content_type == NULL) goto send_500;
-
-    httpd_req_get_hdr_value_str(req, "Content-Type", content_type, content_type_length + 1);
-
-    const char *type_buf = APP_UPGRADE_HEADER_CONTENT;
-
-    if (strncasecmp(type_buf, content_type, strlen(type_buf)) != 0) {
-        goto free_header_send_400;
-    }
-
-    s_upgrade_state.firmware_payload = false;
-    s_upgrade_state.firmware_size    = 0;
-
-    multipart_parser_settings parser_settings = {0};
-
-    parser_settings.on_header_field = upgrade_post_on_header_field_callback;
-    parser_settings.on_header_value = upgrade_post_on_header_value_callback;
-    parser_settings.on_part_data    = upgrade_post_on_part_data_callback;
-
-    char *boundary = strcasestr(content_type, "boundary=");
-    if (boundary == NULL) {
-        goto free_header_send_400;
-    }
-
-    boundary += 9; /* Add strlen("boundary=") */
-
-    multipart_parser *parser = multipart_parser_init(boundary, &parser_settings);
-    if (!parser) {
-        goto free_header_send_500;
-    }
-
-    char *content_buf = malloc(1024);
-    if (!content_buf) {
-        goto free_header_send_500;
-    }
-
-    size_t read_len = 0;
-    while (read_len < req->content_len) {
-        size_t btr = req->content_len - read_len;
-        if (btr > 1024) btr = 1024;
-
-        int ret = httpd_req_recv(req, content_buf, btr);
-        if (ret < 0) {
-            goto free_buf_send_500;
-        }
-
-        read_len += ret;
-
-        if (multipart_parser_execute(parser, content_buf, btr) != btr) {
-            if (s_upgrade_state.firmware_payload) {
-                app_version_manager_ota_abort();
-                goto free_buf_send_500;
-            }
-        }
-    }
-
-    ESP_LOGI(LOG_TAG, "Total %d bytes received.", s_upgrade_state.firmware_size);
-
-    app_version_manager_ota_commit();
-
-    multipart_parser_free(parser);
-
-    free(content_buf);
-    free(content_type);
 
     httpd_resp_set_status(req, "200 OK");
     httpd_resp_send(req, "{}", HTTPD_RESP_USE_STRLEN);
 
     return ESP_OK;
-
-free_header_send_400:
-    free(content_type);
-
-    httpd_resp_set_status(req, "400 Bad Request");
-    httpd_resp_send(req, "{}", HTTPD_RESP_USE_STRLEN);
-
-    return ESP_FAIL;
-
-free_buf_send_500:
-    free(content_buf);
-
-free_header_send_500:
-    free(content_type);
-
-send_500:
-    httpd_resp_set_status(req, "500 Internal Server Error");
-    httpd_resp_send(req, "{}", HTTPD_RESP_USE_STRLEN);
-
-    return ESP_FAIL;
 }
 
 const httpd_uri_t app_api_config_handler_upgrade_get_uri = {
