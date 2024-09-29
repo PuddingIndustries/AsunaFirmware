@@ -19,10 +19,11 @@
 
 #define LTE_UART_NUM      UART_NUM_1
 #define LTE_UART_BUF_SIZE (1024)
-#define LTE_EN_PIN        CONFIG_APP_NETIF_LTE_EN_GPIO
+#define LTE_RST_PIN       CONFIG_APP_NETIF_LTE_RST_GPIO
 #define LTE_TX_PIN        CONFIG_APP_NETIF_LTE_TX_GPIO
 #define LTE_RX_PIN        CONFIG_APP_NETIF_LTE_RX_GPIO
-#define LTE_DTR_PIN       CONFIG_APP_NETIF_LTE_DTR_GPIO
+
+#define LOG_LOCAL_LEVEL ESP_LOG_DEBUG
 
 static const char* LOG_TAG = "asuna_lte";
 
@@ -75,7 +76,7 @@ int app_netif_lte_init(void) {
 
 static void app_netif_lte_pin_init(void) {
     gpio_config_t pin_conf = {
-        .pin_bit_mask = (1U << LTE_EN_PIN),
+        .pin_bit_mask = (1U << LTE_RST_PIN),
         .intr_type    = GPIO_INTR_DISABLE,
         .mode         = GPIO_MODE_OUTPUT_OD,
         .pull_up_en   = GPIO_PULLUP_ENABLE,
@@ -83,19 +84,12 @@ static void app_netif_lte_pin_init(void) {
     };
 
     gpio_config(&pin_conf);
-
-    pin_conf.pin_bit_mask = 1U << LTE_DTR_PIN;
-    pin_conf.mode         = GPIO_MODE_OUTPUT_OD;
-
-    gpio_config(&pin_conf);
-
-    gpio_set_level(LTE_DTR_PIN, 1U);
 }
 
 static void app_netif_lte_reset(void) {
-    gpio_set_level(LTE_EN_PIN, 0U);
+    gpio_set_level(LTE_RST_PIN, 0U);
     vTaskDelay(pdMS_TO_TICKS(100));
-    gpio_set_level(LTE_EN_PIN, 1U);
+    gpio_set_level(LTE_RST_PIN, 1U);
     vTaskDelay(pdMS_TO_TICKS(100));
 }
 
