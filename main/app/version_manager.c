@@ -122,6 +122,10 @@ release_lock_exit:
 }
 
 int app_version_manager_ota_commit(void) {
+    if (esp_ota_end(s_app_vm_state.upgrade_handle) != ESP_OK) {
+        ESP_LOGE(LOG_TAG, "Failed to end OTA session.");
+    }
+
     return 0;
 }
 

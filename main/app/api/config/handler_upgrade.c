@@ -23,6 +23,13 @@
 
 static const char *LOG_TAG = "asuna_httpupd";
 
+typedef struct {
+    bool   firmware_payload;
+    size_t firmware_size;
+} app_api_config_upgrade_state_t;
+
+static app_api_config_upgrade_state_t s_upgrade_state;
+
 static char *app_api_config_handler_upgrade_serialize(const app_version_t *versions, size_t num_slots) {
     char *ret = NULL;
 
@@ -112,10 +119,33 @@ static int upgrade_post_on_header_field_callback(multipart_parser *parser, const
 
 static int upgrade_post_on_header_value_callback(multipart_parser *parser, const char *at, size_t length) {
     ESP_LOGI(LOG_TAG, "hdr value: %.*s", length, at);
+
+    const char *needle = "application/octet-stream";
+
+    if (strncasecmp(at, needle, strlen(needle)) != 0) {
+        return 0;
+    }
+
+    s_upgrade_state.firmware_payload = true;
+
+    if (app_version_manager_ota_start() != 0) {
+        return -1;
+    }
+
     return 0;
 }
 
 static int upgrade_post_on_part_data_callback(multipart_parser *parser, const char *at, size_t length) {
+    if (!s_upgrade_state.firmware_payload) {
+        return 0;
+    }
+
+    s_upgrade_state.firmware_size += length;
+
+    if (app_version_manager_ota_save((const uint8_t *)at, length) != 0) {
+        return -1;
+    }
+
     return 0;
 }
 
@@ -139,6 +169,9 @@ static esp_err_t app_api_config_handler_upgrade_post(httpd_req_t *req) {
     if (strncasecmp(type_buf, content_type, strlen(type_buf)) != 0) {
         goto free_header_send_400;
     }
+
+    s_upgrade_state.firmware_payload = false;
+    s_upgrade_state.firmware_size    = 0;
 
     multipart_parser_settings parser_settings = {0};
 
@@ -175,8 +208,17 @@ static esp_err_t app_api_config_handler_upgrade_post(httpd_req_t *req) {
 
         read_len += ret;
 
-        multipart_parser_execute(parser, content_buf, btr);
+        if (multipart_parser_execute(parser, content_buf, btr) != btr) {
+            if (s_upgrade_state.firmware_payload) {
+                app_version_manager_ota_abort();
+                goto free_buf_send_500;
+            }
+        }
     }
+
+    ESP_LOGI(LOG_TAG, "Total %d bytes received.", s_upgrade_state.firmware_size);
+
+    app_version_manager_ota_commit();
 
     multipart_parser_free(parser);
 
