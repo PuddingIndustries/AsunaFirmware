@@ -15,9 +15,10 @@
 #define APP_VM_OTA_TIMEOUT_MS (30 * 1000)
 
 typedef struct {
-    SemaphoreHandle_t upgrade_mutex;
-    esp_ota_handle_t  upgrade_handle;
-    size_t            upgrade_received;
+    SemaphoreHandle_t      upgrade_mutex;
+    esp_ota_handle_t       upgrade_handle;
+    size_t                 upgrade_received;
+    const esp_partition_t *upgrade_partition;
 } app_version_manager_state_t;
 
 static const char *LOG_TAG = "asuna_vermgr";
@@ -60,14 +61,37 @@ int app_version_manager_get_status(app_ota_slot_t slot, app_version_t *version) 
             break;
     }
 
-    strncpy(version->name, app_desc->project_name, sizeof(version->name));
-    strncpy(version->app_version, app_desc->version, sizeof(version->app_version));
-    strncpy(version->idf_version, app_desc->idf_ver, sizeof(version->idf_version));
-    strncpy(version->date, app_desc->date, sizeof(version->date));
-    strncpy(version->time, app_desc->time, sizeof(version->time));
+    if (version->is_current) {
+        version->is_valid = true;
 
-    for (size_t i = 0; i < sizeof(app_desc->app_elf_sha256); i++) {
-        snprintf(&version->sha256[2 * i], 3, "%02x", app_desc->app_elf_sha256[i]);
+        strncpy(version->name, app_desc->project_name, sizeof(version->name));
+        strncpy(version->app_version, app_desc->version, sizeof(version->app_version));
+        strncpy(version->idf_version, app_desc->idf_ver, sizeof(version->idf_version));
+        strncpy(version->date, app_desc->date, sizeof(version->date));
+        strncpy(version->time, app_desc->time, sizeof(version->time));
+
+        for (size_t i = 0; i < sizeof(app_desc->app_elf_sha256); i++) {
+            snprintf(&version->sha256[2 * i], 3, "%02x", app_desc->app_elf_sha256[i]);
+        }
+    } else {
+        esp_app_desc_t nxt_desc;
+        if (esp_ota_get_partition_description(nxt_part, &nxt_desc) != ESP_OK) {
+            version->is_valid = false;
+
+            /* Do not copy invalid values here. */
+        } else {
+            version->is_valid = true;
+
+            strncpy(version->name, nxt_desc.project_name, sizeof(version->name));
+            strncpy(version->app_version, nxt_desc.version, sizeof(version->app_version));
+            strncpy(version->idf_version, nxt_desc.idf_ver, sizeof(version->idf_version));
+            strncpy(version->date, nxt_desc.date, sizeof(version->date));
+            strncpy(version->time, nxt_desc.time, sizeof(version->time));
+
+            for (size_t i = 0; i < sizeof(nxt_desc.app_elf_sha256); i++) {
+                snprintf(&version->sha256[2 * i], 3, "%02x", nxt_desc.app_elf_sha256[i]);
+            }
+        }
     }
 
     return 0;
@@ -81,6 +105,8 @@ int app_version_manager_ota_start(void) {
 
     const esp_partition_t *app_part = esp_ota_get_running_partition();
     const esp_partition_t *nxt_part = esp_ota_get_next_update_partition(app_part);
+
+    s_app_vm_state.upgrade_partition = nxt_part;
 
     ESP_LOGI(LOG_TAG, "Next OTA partition: %s", nxt_part->label);
 
@@ -126,6 +152,10 @@ int app_version_manager_ota_commit(void) {
         ESP_LOGE(LOG_TAG, "Failed to end OTA session.");
     }
 
+    esp_ota_set_boot_partition(s_app_vm_state.upgrade_partition);
+
+    esp_restart();
+
     return 0;
 }
 
@@ -135,8 +165,6 @@ int app_version_manager_ota_abort(void) {
     }
 
     xSemaphoreGiveRecursive(s_app_vm_state.upgrade_mutex);
-
-    /* TODO: reset OTA states. */
 
     return 0;
 }

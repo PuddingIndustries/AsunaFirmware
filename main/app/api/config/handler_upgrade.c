@@ -4,9 +4,13 @@
 /* IDF */
 #include "esp_http_server.h"
 #include "esp_log.h"
+#include "esp_random.h"
 
 /* cJSON */
 #include "cJSON.h"
+
+/* Base64 */
+#include "mbedtls/base64.h"
 
 /* App */
 #include "app/api/config/handler_upgrade.h"
@@ -14,17 +18,49 @@
 
 #define ARRAY_SIZE(x) (sizeof(x) / sizeof((x)[0]))
 
-#define APP_UPGRADE_HEADER_CONTENT    "multipart/form-data"
-#define APP_UPGRADE_HEADER_MAX_LENGTH (512)
-#define APP_UPGRADE_BUFFER_MAX_LENGTH (1024)
+#define APP_OTA_MAXIMUM_BODY_SIZE (1536)
+
+#define APP_OTA_SESSION_LEN (8)
+#define APP_OTA_DATA_LEN    (1024)
+
+typedef enum {
+    APP_OTA_STATUS_IDLE        = 0U,
+    APP_OTA_STATUS_IN_PROGRESS = 1U,
+} app_api_config_upgrade_ota_status_t;
+
+typedef enum {
+    APP_OTA_ACTION_START  = 0U,
+    APP_OTA_ACTION_WRITE  = 1U,
+    APP_OTA_ACTION_COMMIT = 2U,
+    APP_OTA_ACTION_ABORT  = 3U,
+} app_api_config_upgrade_ota_action_t;
+
+typedef struct {
+    app_api_config_upgrade_ota_action_t action;
+    char                                session[APP_OTA_SESSION_LEN + 1];
+    struct {
+        size_t  id;
+        size_t  len;
+        uint8_t data[APP_OTA_DATA_LEN];
+    } payload;
+} app_api_config_upgrade_ota_packet_t;
+
+typedef struct {
+    struct {
+        app_api_config_upgrade_ota_status_t status;
+        char                                session[APP_OTA_SESSION_LEN + 1];
+        size_t                              packet_id;
+    } ota;
+} app_api_config_upgrade_state_t;
 
 static const char *LOG_TAG = "asuna_httpupd";
 
-typedef struct {
-    char upgrade_session[32];
-} app_api_config_upgrade_state_t;
-
-static app_api_config_upgrade_state_t s_upgrade_state;
+static app_api_config_upgrade_state_t s_upgrade_state = {
+    .ota =
+        {
+            .status = APP_OTA_STATUS_IDLE,
+        },
+};
 
 static char *app_api_config_handler_upgrade_serialize(const app_version_t *versions, size_t num_slots) {
     char *ret = NULL;
@@ -48,6 +84,13 @@ static char *app_api_config_handler_upgrade_serialize(const app_version_t *versi
         cJSON *in_use = cJSON_CreateBool(versions[i].is_current);
         if (in_use == NULL) goto del_root_exit;
         cJSON_AddItemToObject(version, "in_use", in_use);
+
+        cJSON *valid = cJSON_CreateBool(versions[i].is_valid);
+        if (valid == NULL) goto del_root_exit;
+        cJSON_AddItemToObject(version, "valid", valid);
+
+        if (!versions[i].is_valid) continue;
+        /* The following entries only exists for a valid partition */
 
         cJSON *name = cJSON_CreateString(versions[i].name);
         if (name == NULL) goto del_root_exit;
@@ -74,16 +117,88 @@ static char *app_api_config_handler_upgrade_serialize(const app_version_t *versi
         cJSON_AddItemToObject(version, "sha256", sha256);
     }
 
-    cJSON *ota_status = cJSON_CreateObject();
-    if (ota_status == NULL) goto del_root_exit;
+    cJSON *ota = cJSON_CreateObject();
+    if (ota == NULL) goto del_root_exit;
+    cJSON_AddItemToObject(root, "ota", ota);
 
-    cJSON_AddItemToObject(root, "ota_status", ota_status);
+    cJSON *ota_status = cJSON_CreateNumber(s_upgrade_state.ota.status);
+    if (ota_status == NULL) goto del_root_exit;
+    cJSON_AddItemToObject(ota, "status", ota_status);
+
+    if (s_upgrade_state.ota.status != APP_OTA_STATUS_IDLE) {
+        cJSON *ota_session = cJSON_CreateString(s_upgrade_state.ota.session);
+        if (ota_session == NULL) goto del_root_exit;
+        cJSON_AddItemToObject(ota, "session", ota_session);
+    }
 
     ret = cJSON_PrintUnformatted(root);
 
 del_root_exit:
     cJSON_Delete(root);
     return ret;
+}
+
+static app_api_config_upgrade_ota_packet_t *app_api_config_handler_upgrade_packet_deserialize(const char *json) {
+    char *buf = NULL;
+
+    app_api_config_upgrade_ota_packet_t *pkt = malloc(sizeof(app_api_config_upgrade_ota_packet_t));
+    if (pkt == NULL) {
+        return NULL;
+    }
+
+    cJSON *j = cJSON_Parse(json);
+    if (j == NULL) {
+        goto free_pkt_exit;
+    }
+
+    cJSON *root_action = cJSON_GetObjectItem(j, "action");
+    if (cJSON_IsInvalid(root_action)) goto del_json_exit;
+
+    pkt->action = cJSON_GetNumberValue(root_action);
+
+    /* Session ticket is optional when action is START */
+    if (pkt->action != APP_OTA_ACTION_START) {
+        cJSON *root_sesion = cJSON_GetObjectItem(j, "session");
+        if (cJSON_IsInvalid(root_sesion)) goto del_json_exit;
+
+        buf = cJSON_GetStringValue(root_sesion);
+        if (buf == NULL) goto del_json_exit;
+
+        strncpy(pkt->session, buf, sizeof(pkt->session));
+    }
+
+    /* Payload is optional when action is not WRITE */
+    if (pkt->action == APP_OTA_ACTION_WRITE) {
+        cJSON *root_payload = cJSON_GetObjectItem(j, "payload");
+        if (cJSON_IsInvalid(root_payload) || !cJSON_IsObject(root_payload)) goto del_json_exit;
+
+        cJSON *root_payload_id = cJSON_GetObjectItem(root_payload, "id");
+        if (cJSON_IsInvalid(root_payload_id)) goto del_json_exit;
+
+        pkt->payload.id = cJSON_GetNumberValue(root_payload_id);
+
+        cJSON *root_payload_data = cJSON_GetObjectItem(root_payload, "data");
+        if (cJSON_IsInvalid(root_payload_data)) goto del_json_exit;
+
+        buf = cJSON_GetStringValue(root_payload_data);
+        if (buf == NULL) goto del_json_exit;
+
+        int ret = mbedtls_base64_decode(pkt->payload.data, sizeof(pkt->payload.data), &pkt->payload.len,
+                                        (const uint8_t *)buf, strlen(buf));
+        if (ret != 0) goto del_json_exit;
+    }
+
+    cJSON_Delete(j);
+
+    return pkt;
+
+del_json_exit:
+    cJSON_Delete(j);
+
+free_pkt_exit:
+    free(pkt);
+
+    return NULL;
 }
 
 static esp_err_t app_api_config_handler_upgrade_get(httpd_req_t *req) {
@@ -114,11 +229,121 @@ send_500:
 }
 
 static esp_err_t app_api_config_handler_upgrade_post(httpd_req_t *req) {
+    size_t payload_size = req->content_len;
+    if (payload_size > APP_OTA_MAXIMUM_BODY_SIZE) {
+        goto send_413;
+    }
+
+    char *payload = malloc(payload_size);
+    if (payload == NULL) goto send_500;
+
+    int ret = httpd_req_recv(req, payload, payload_size);
+    if (ret <= 0) goto free_buf_send_500;
+
+    app_api_config_upgrade_ota_packet_t *packet = app_api_config_handler_upgrade_packet_deserialize(payload);
+    if (packet == NULL) {
+        goto free_buf_send_500;
+    }
+
+    char resp[128];
+
+    switch (packet->action) {
+        case APP_OTA_ACTION_START: {
+            if (s_upgrade_state.ota.status != APP_OTA_STATUS_IDLE) {
+                goto free_pkt_send_400;
+            }
+
+            snprintf(s_upgrade_state.ota.session, sizeof(s_upgrade_state.ota.session), "%08lx", esp_random());
+            if (app_version_manager_ota_start() != 0) {
+                goto free_pkt_send_500;
+            }
+
+            s_upgrade_state.ota.status = APP_OTA_STATUS_IN_PROGRESS;
+
+            snprintf(resp, sizeof(resp), "{\"status\": \"success\", \"session\": \"%s\"}", s_upgrade_state.ota.session);
+            break;
+        }
+
+        case APP_OTA_ACTION_WRITE: {
+            if (s_upgrade_state.ota.status != APP_OTA_STATUS_IN_PROGRESS) {
+                goto free_pkt_send_400;
+            }
+
+            if (strcmp(s_upgrade_state.ota.session, packet->session) != 0) {
+                goto free_pkt_send_400;
+            }
+
+            if (app_version_manager_ota_save(packet->payload.data, packet->payload.len) != 0) {
+                goto free_pkt_send_500;
+            }
+
+            snprintf(resp, sizeof(resp), "{\"status\": \"success\"}");
+            break;
+        }
+
+        case APP_OTA_ACTION_COMMIT: {
+            if (s_upgrade_state.ota.status != APP_OTA_STATUS_IN_PROGRESS) {
+                goto free_pkt_send_400;
+            }
+
+            if (strcmp(s_upgrade_state.ota.session, packet->session) != 0) {
+                goto free_pkt_send_400;
+            }
+
+            if (app_version_manager_ota_commit() != 0) {
+                goto free_pkt_send_500;
+            }
+
+            s_upgrade_state.ota.status = APP_OTA_STATUS_IDLE;
+
+            snprintf(resp, sizeof(resp), "{\"status\": \"success\"}");
+            break;
+        }
+
+        case APP_OTA_ACTION_ABORT: {
+            if (s_upgrade_state.ota.status != APP_OTA_STATUS_IDLE) {
+                s_upgrade_state.ota.status = APP_OTA_STATUS_IDLE;
+                app_version_manager_ota_abort();
+            }
+
+            snprintf(resp, sizeof(resp), "{\"status\": \"success\"}");
+            break;
+        }
+
+        default:
+            break;
+    }
+
+    free(packet);
+    free(payload);
 
     httpd_resp_set_status(req, "200 OK");
-    httpd_resp_send(req, "{}", HTTPD_RESP_USE_STRLEN);
+    httpd_resp_send(req, resp, HTTPD_RESP_USE_STRLEN);
 
     return ESP_OK;
+
+free_pkt_send_400:
+    free(packet);
+    free(payload);
+
+    httpd_resp_set_status(req, "400 Bad Request");
+    httpd_resp_send(req, "{}", HTTPD_RESP_USE_STRLEN);
+
+free_pkt_send_500:
+    free(packet);
+
+free_buf_send_500:
+    free(payload);
+
+send_500:
+    httpd_resp_set_status(req, "500 Internal Server Error");
+    httpd_resp_send(req, "{}", HTTPD_RESP_USE_STRLEN);
+
+send_413:
+    httpd_resp_set_status(req, "413 Payload Too Large");
+    httpd_resp_send(req, "{}", HTTPD_RESP_USE_STRLEN);
+
+    return ESP_FAIL;
 }
 
 const httpd_uri_t app_api_config_handler_upgrade_get_uri = {

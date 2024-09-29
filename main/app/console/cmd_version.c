@@ -15,8 +15,6 @@
 #include "app/console/cmd_version.h"
 #include "app/version_manager.h"
 
-static const app_ota_slot_t s_app_ota_slots[] = {APP_OTA_SLOT_0, APP_OTA_SLOT_1};
-
 static inline void app_console_version_print(app_version_t *version) {
     printf("\t\tProject name: %s\n", version->name);
     printf("\t\tAPP version: %s\n", version->app_version);
@@ -28,15 +26,19 @@ static inline void app_console_version_print(app_version_t *version) {
 static int app_console_version_func(int argc, char **argv) {
     printf("Version information:\n");
 
-    for (size_t i = 0; i < sizeof(s_app_ota_slots) / sizeof(s_app_ota_slots[0]); i++) {
+    for (size_t i = 0; i < APP_OTA_SLOT_END; i++) {
         app_version_t version;
 
-        if (app_version_manager_get_status(s_app_ota_slots[i], &version) != 0) {
+        if (app_version_manager_get_status(i, &version) != 0) {
             return -1;
         }
 
         printf("\tOTA slot #%d [%c]:\n", i, version.is_current ? '+' : '-');
-        app_console_version_print(&version);
+        if (version.is_valid) {
+            app_console_version_print(&version);
+        } else {
+            printf("\t\tSlot is empty or invalid.\n");
+        }
         printf("\n");
     }
 

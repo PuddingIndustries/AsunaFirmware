@@ -1,3 +1,5 @@
+#include <unistd.h>
+
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
@@ -87,9 +89,9 @@ int app_api_server_init(void) {
 
     httpd_config_t httpd_config = HTTPD_DEFAULT_CONFIG();
 
-    httpd_config.uri_match_fn = httpd_uri_match_wildcard;
-    httpd_config.open_fn      = app_api_server_socket_open_callback;
-    httpd_config.close_fn     = app_api_server_socket_close_callback;
+    httpd_config.uri_match_fn     = httpd_uri_match_wildcard;
+    httpd_config.open_fn          = app_api_server_socket_open_callback;
+    httpd_config.close_fn         = app_api_server_socket_close_callback;
 
     s_app_api_handle = NULL;
 
@@ -131,7 +133,7 @@ deinit_server_exit:
 }
 
 static esp_err_t app_api_server_socket_open_callback(httpd_handle_t handle, int fd) {
-    ESP_LOGI(LOG_TAG, "Underlying socket open, fd=%d", fd);
+    ESP_LOGD(LOG_TAG, "Underlying socket open, fd=%d", fd);
 
     size_t handler_count = sizeof(s_app_handler_list) / sizeof(s_app_handler_list[0]);
 
@@ -151,7 +153,7 @@ static esp_err_t app_api_server_socket_open_callback(httpd_handle_t handle, int 
 }
 
 static void app_api_server_socket_close_callback(httpd_handle_t handle, int fd) {
-    ESP_LOGI(LOG_TAG, "Underlying socket closed, fd=%d", fd);
+    ESP_LOGD(LOG_TAG, "Underlying socket closed, fd=%d", fd);
 
     size_t handler_count = sizeof(s_app_handler_list) / sizeof(s_app_handler_list[0]);
 
@@ -161,6 +163,9 @@ static void app_api_server_socket_close_callback(httpd_handle_t handle, int fd) 
             s_app_handler_list[i].onclose(handle, fd);
         }
     }
+
+    /* HTTPD does not close socket if close_fn is set; DO NOT REMOVE! */
+    close(fd);
 }
 
 int app_api_server_deinit(void) {

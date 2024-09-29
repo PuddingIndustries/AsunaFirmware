@@ -9,6 +9,7 @@ typedef enum {
 
 typedef struct {
     bool is_current;
+    bool is_valid;
 
     char name[32];
     char date[16];
