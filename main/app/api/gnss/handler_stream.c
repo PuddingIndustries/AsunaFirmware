@@ -72,9 +72,9 @@ static int app_ws_client_list_remove(httpd_handle_t handle) {
     }
 
     if (removed_item) {
-        ESP_LOGI(LOG_TAG, "Successfully removed stream client from list, handle=%p", handle);
+        ESP_LOGD(LOG_TAG, "Successfully removed stream client from list, handle=%p", handle);
     } else {
-        ESP_LOGI(LOG_TAG, "No matching item removed from the list, handle=%p", handle);
+        ESP_LOGD(LOG_TAG, "No matching item removed from the list, handle=%p", handle);
     }
 
     return 0;
