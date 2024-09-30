@@ -17,6 +17,7 @@
 #include "app/console/cmd_ps.h"
 #include "app/console/cmd_version.h"
 #include "app/console/cmd_wifi.h"
+#include "app/console/cmd_gnss_server_test.h"
 #include "app/console_common.h"
 
 #define APP_CONSOLE_PROMPT_STR "asuna"
@@ -29,6 +30,7 @@ static const esp_console_cmd_t* s_app_console_cmd_list[] = {
     &app_console_cmd_ps,
     &app_console_cmd_version,
     &app_console_cmd_wifi,
+    &app_console_cmd_gnss_test,
 };
 
 int app_console_init(void) {
