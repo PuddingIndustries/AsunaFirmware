@@ -1,0 +1,6 @@
+#ifndef APP_CONSOLE_CMD_GNSS_SERVER_TEST_H
+#define APP_CONSOLE_CMD_GNSS_SERVER_TEST_H
+
+extern const esp_console_cmd_t app_console_cmd_gnss_test;
+
+#endif //APP_CONSOLE_CMD_GNSS_SERVER_TEST_H
