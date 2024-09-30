@@ -114,7 +114,7 @@ int app_netif_wifi_init(void) {
         ESP_LOGW(LOG_TAG, "Default AP SSID: %s, Password: %s", app_cfg.ap_config.ssid, app_cfg.ap_config.pass);
     }
 
-    if (xTaskCreate(app_netif_wifi_manager_task, "WIFI_MGR", 2048, NULL, 2, NULL) != pdPASS) {
+    if (xTaskCreate(app_netif_wifi_manager_task, "A_WIFI_MGR", 2048, NULL, 2, NULL) != pdPASS) {
         ESP_LOGE(LOG_TAG, "Failed to initialize WiFi manager task.");
 
         ret = -3;

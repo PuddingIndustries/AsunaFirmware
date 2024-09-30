@@ -27,6 +27,13 @@ static const char *s_task_state_string[] = {
     [eSuspended] = "SUSPENDED", [eDeleted] = "DELETED", [eInvalid] = "INVALID",
 };
 
+int app_console_ps_status_compare(const void *a, const void *b) {
+    const TaskStatus_t *ap = (TaskStatus_t *)a;
+    const TaskStatus_t *bp = (TaskStatus_t *)b;
+
+    return  (int)bp->uxBasePriority - (int)ap->uxBasePriority;
+}
+
 static int app_console_ps_func(int argc, char **argv) {
     int ret = 0;
 
@@ -51,6 +58,8 @@ static int app_console_ps_func(int argc, char **argv) {
         goto free_list_exit;
     }
 
+    qsort(status_list, num_tasks, sizeof(TaskStatus_t), app_console_ps_status_compare);
+
     printf("Task Status:\n");
     printf("%11s\t", "xTaskNumber");
     printf("%10s\t", "xHandle");
@@ -59,6 +68,7 @@ static int app_console_ps_func(int argc, char **argv) {
     printf("%10s\t", "basePri");
     printf("%10s\t", "currPri");
     printf("%10s\t", "eState");
+    printf("%10s\t", "runTime");
     printf("\n");
 
     for (uint8_t i = 0; i < 128; i++) {
@@ -75,6 +85,7 @@ static int app_console_ps_func(int argc, char **argv) {
         printf("%10d\t", status_list[i].uxBasePriority);
         printf("%10d\t", status_list[i].uxCurrentPriority);
         printf("%10s\t", s_task_state_string[status_list[i].eCurrentState]);
+        printf("%10lu\t", status_list[i].ulRunTimeCounter);
 
         printf("\n");
     }
