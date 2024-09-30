@@ -54,8 +54,10 @@ void app_main(void) {
 
     ESP_LOGI(LOG_TAG, "Initialization completed.");
 
+    vTaskDelete(NULL);
+
 dead_loop:
     for (;;) {
-        vTaskDelay(pdMS_TO_TICKS(1000));
+        vTaskSuspend(NULL);
     }
 }

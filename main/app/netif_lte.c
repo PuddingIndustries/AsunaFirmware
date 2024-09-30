@@ -166,7 +166,7 @@ static CellularCommInterfaceError_t app_netif_lte_comm_open(CellularCommInterfac
     uart_param_config(LTE_UART_NUM, &uart_config);
     uart_set_pin(LTE_UART_NUM, LTE_TX_PIN, LTE_RX_PIN, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE);
 
-    if (xTaskCreate(app_netif_lte_comm_task, "A_COMM", 2048, ctx, 3, &ctx->uart_rx_task) != pdPASS) {
+    if (xTaskCreate(app_netif_lte_comm_task, "A_LTE_COMM", 2048, ctx, 3, &ctx->uart_rx_task) != pdPASS) {
         ESP_LOGE(LOG_TAG, "Failed to create LTE comm RX task");
 
         free(ctx);
