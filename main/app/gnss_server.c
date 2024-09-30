@@ -150,7 +150,7 @@ static void app_gnss_reset(void) {
 }
 
 static void app_gnss_uart_event_task(void* parameters) {
-    int                    i;
+    esp_err_t              ret;
     app_gnss_server_ctx_t* ctx = parameters;
     uart_event_t           event;
 
@@ -183,7 +183,12 @@ static void app_gnss_uart_event_task(void* parameters) {
 
         size_t   gnss_data_size;
         uint8_t* gnss_data_buf;
-        uart_get_buffered_data_len(GNSS_UART_NUM, &gnss_data_size);
+        ret = uart_get_buffered_data_len(GNSS_UART_NUM, &gnss_data_size);
+
+        if (ret != ESP_OK || gnss_data_size == 0) {
+            ESP_LOGD(LOG_TAG, "Received UART data event without data, continue...");
+            continue;
+        }
 
         gnss_data_buf = malloc(gnss_data_size);
         if (gnss_data_buf == NULL) {
@@ -191,9 +196,13 @@ static void app_gnss_uart_event_task(void* parameters) {
             continue;
         }
 
-        uart_read_bytes(GNSS_UART_NUM, gnss_data_buf, gnss_data_size, portMAX_DELAY);
+        gnss_data_size = uart_read_bytes(GNSS_UART_NUM, gnss_data_buf, gnss_data_size, portMAX_DELAY);
+        if (gnss_data_size <= 0) {
+            ESP_LOGE(LOG_TAG, "Not enough data read from UART.");
+            goto free_buf_continue;
+        }
 
-        for (i = 0; i < gnss_data_size; i++) {
+        for (size_t i = 0; i < gnss_data_size; i++) {
             if (input_nmea(&ctx->nmea_raw, gnss_data_buf[i])) {
                 ESP_LOGD(LOG_TAG, "NMEA[%c%c%c] received", ctx->nmea_raw.type[0], ctx->nmea_raw.type[1],
                          ctx->nmea_raw.type[2]);
@@ -204,13 +213,14 @@ static void app_gnss_uart_event_task(void* parameters) {
             }
         }
 
-        free(gnss_data_buf);
-
         /* Dispatch */
         app_gnss_dispatch(APP_GNSS_CB_FIX, NULL);
         app_gnss_dispatch(APP_GNSS_CB_SAT, NULL);
         app_gnss_dispatch(APP_GNSS_CB_RAW_NMEA, NULL);
         app_gnss_dispatch(APP_GNSS_CB_RAW_RTCM, NULL);
+
+    free_buf_continue:
+        free(gnss_data_buf);
     }
 }
 
