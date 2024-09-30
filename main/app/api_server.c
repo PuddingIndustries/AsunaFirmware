@@ -89,9 +89,9 @@ int app_api_server_init(void) {
 
     httpd_config_t httpd_config = HTTPD_DEFAULT_CONFIG();
 
-    httpd_config.uri_match_fn     = httpd_uri_match_wildcard;
-    httpd_config.open_fn          = app_api_server_socket_open_callback;
-    httpd_config.close_fn         = app_api_server_socket_close_callback;
+    httpd_config.uri_match_fn = httpd_uri_match_wildcard;
+    httpd_config.open_fn      = app_api_server_socket_open_callback;
+    httpd_config.close_fn     = app_api_server_socket_close_callback;
 
     s_app_api_handle = NULL;
 
