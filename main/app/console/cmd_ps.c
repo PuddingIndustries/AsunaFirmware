@@ -31,7 +31,11 @@ int app_console_ps_status_compare(const void *a, const void *b) {
     const TaskStatus_t *ap = (TaskStatus_t *)a;
     const TaskStatus_t *bp = (TaskStatus_t *)b;
 
-    return  (int)bp->uxBasePriority - (int)ap->uxBasePriority;
+    if (bp->uxBasePriority == ap->uxBasePriority) {
+        return (int)bp->xTaskNumber - (int)ap->xTaskNumber;
+    } else {
+        return (int)bp->uxBasePriority - (int)ap->uxBasePriority;
+    }
 }
 
 static int app_console_ps_func(int argc, char **argv) {

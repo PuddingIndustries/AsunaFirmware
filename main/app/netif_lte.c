@@ -61,7 +61,7 @@ int app_netif_lte_init(void) {
     s_cellular_comm_interface.send  = app_netif_lte_comm_send;
     s_cellular_comm_interface.recv  = app_netif_lte_comm_recv;
 
-    if (xTaskCreate(app_netif_lte_manager_task, "A_LTE", 4096, NULL, 3, NULL) != pdPASS) {
+    if (xTaskCreate(app_netif_lte_manager_task, "asuna_lte", 4096, NULL, 3, NULL) != pdPASS) {
         ESP_LOGE(LOG_TAG, "Failed to create LTE manager task.");
 
         return -2;
@@ -98,7 +98,7 @@ static void app_netif_lte_manager_task(void* arguments) {
     for (;;) {
         if (!lte_initialized) {
             if (Cellular_Init(&handle, &s_cellular_comm_interface) != CELLULAR_SUCCESS) {
-                ESP_LOGE(LOG_TAG, "Failed to initialize celluar network.");
+                ESP_LOGE(LOG_TAG, "Failed to initialize cellular network.");
 
                 vTaskDelay(pdMS_TO_TICKS(1000));
                 continue;
@@ -166,7 +166,7 @@ static CellularCommInterfaceError_t app_netif_lte_comm_open(CellularCommInterfac
     uart_param_config(LTE_UART_NUM, &uart_config);
     uart_set_pin(LTE_UART_NUM, LTE_TX_PIN, LTE_RX_PIN, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE);
 
-    if (xTaskCreate(app_netif_lte_comm_task, "A_LTE_COMM", 2048, ctx, 3, &ctx->uart_rx_task) != pdPASS) {
+    if (xTaskCreate(app_netif_lte_comm_task, "asuna_lte_comm", 2048, ctx, 3, &ctx->uart_rx_task) != pdPASS) {
         ESP_LOGE(LOG_TAG, "Failed to create LTE comm RX task");
 
         free(ctx);

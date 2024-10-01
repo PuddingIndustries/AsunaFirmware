@@ -46,7 +46,6 @@ static void app_gnss_send_init_command(void);
 static void app_gnss_dispatch(app_gnss_cb_type_t type, void* data);
 
 int app_gnss_server_init(void) {
-
     app_gnss_server_ctx_t* ctx = malloc(sizeof(app_gnss_server_ctx_t));
     if (ctx == NULL) {
         ESP_LOGE(LOG_TAG, "Failed to allocate GNSS context.");
@@ -88,7 +87,7 @@ int app_gnss_server_init(void) {
 
     app_gnss_send_init_command();
 
-    if (xTaskCreate(app_gnss_uart_event_task, "A_GNSS", 4096, ctx, 5, &ctx->uart_rx_task) != pdPASS) {
+    if (xTaskCreate(app_gnss_uart_event_task, "asuna_gnss", 4096, ctx, 5, &ctx->uart_rx_task) != pdPASS) {
         ESP_LOGE(LOG_TAG, "Failed to create GNSS UART event task.");
         return -1;
     }
@@ -153,17 +152,17 @@ static void app_gnss_send_init_command(void) {
     const char* init_commands[] = {
         "$PAIR862,0,0,253*2E\r\n",
         "$PAIR092,1*2C\r\n",
-        "$PAIR513*3D\r\n"
+        "$PAIR513*3D\r\n",
     };
-    
+
     const int num_commands = sizeof(init_commands) / sizeof(init_commands[0]);
-    
+
     for (int i = 0; i < num_commands; i++) {
         uart_write_bytes(GNSS_UART_NUM, init_commands[i], strlen(init_commands[i]));
         ESP_LOGI(LOG_TAG, "Sent command: %s", init_commands[i]);
         vTaskDelay(pdMS_TO_TICKS(100));
     }
-    
+
     ESP_LOGI(LOG_TAG, "Sent all initialization commands to GNSS module");
 }
 

@@ -69,7 +69,7 @@ bool Platform_CreateDetachedThread(void (*threadRoutine)(void*), void* pArgument
     thread_def->thread_code = threadRoutine;
     thread_def->argument    = pArgument;
 
-    BaseType_t ret = xTaskCreate(Platform_ThreadWrapper, "A_CELL", stackSize, thread_def, priority, NULL);
+    BaseType_t ret = xTaskCreate(Platform_ThreadWrapper, "asuna_cellular", stackSize, thread_def, priority, NULL);
     if (ret != pdPASS) {
         Platform_Free(thread_def);
         return false;
