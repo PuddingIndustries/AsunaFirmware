@@ -96,7 +96,7 @@ int app_lora_server_init(void) {
         }
     }
 
-    xTaskCreate(app_lora_server_task, "A_LORA", 4096, &s_lora_server_state, 3, NULL);
+    xTaskCreate(app_lora_server_task, "asuna_lora", 4096, &s_lora_server_state, 3, NULL);
 
     ESP_LOGI(LOG_TAG, "Initialization completed.");
 
