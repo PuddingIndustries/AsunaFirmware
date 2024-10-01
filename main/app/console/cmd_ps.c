@@ -75,7 +75,7 @@ static int app_console_ps_func(int argc, char **argv) {
     printf("%10s\t", "runTime");
     printf("\n");
 
-    for (uint8_t i = 0; i < 128; i++) {
+    for (uint8_t i = 0; i < 130; i++) {
         printf("-");
     }
 
