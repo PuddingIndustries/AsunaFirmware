@@ -7,7 +7,7 @@
 
 static app_gnss_cb_handle_t g_gnss_handle = NULL;
 
-static void gnss_callback(void* user_data, app_gnss_cb_type_t type, void* data) {
+static int gnss_callback(void* user_data, app_gnss_cb_type_t type, void* data) {
     switch (type) {
         case APP_GNSS_CB_FIX:
             printf("GNSS Fix received\n");
@@ -28,6 +28,8 @@ static void gnss_callback(void* user_data, app_gnss_cb_type_t type, void* data) 
         default:
             printf("Unknown GNSS data type received\n");
     }
+
+    return 0;
 }
 
 static int cmd_gnss_test(int argc, char **argv) {

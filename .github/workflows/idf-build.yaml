@@ -19,6 +19,6 @@ jobs:
       - name: Build Application
         uses: espressif/esp-idf-ci-action@v1
         with:
-          esp_idf_version: v5.3.1
+          esp_idf_version: v5.4.0
           target: esp32s3
           path: "./"
