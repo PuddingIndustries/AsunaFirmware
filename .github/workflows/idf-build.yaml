@@ -11,14 +11,22 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout Repository
+      - name: Checkout repository
         uses: actions/checkout@v2
         with:
           submodules: 'recursive'
 
-      - name: Build Application
+      - name: Build application
         uses: espressif/esp-idf-ci-action@v1
         with:
           esp_idf_version: v5.3.1
           target: esp32s3
           path: "./"
+
+      - name: Report code size
+        uses: espressif/esp-idf-ci-action@v1
+        with:
+          esp_idf_version: v5.3.1
+          target: esp32s3
+          path: "./"
+          command: 'idf.py size && idf.py size-components'
