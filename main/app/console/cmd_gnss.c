@@ -1,4 +1,5 @@
 #include <errno.h>
+#include <math.h>
 #include <string.h>
 
 #include "app/gnss_server.h"
@@ -17,19 +18,42 @@ static const app_console_subcommand_t s_app_console_gnss_subcommands[] = {
 };
 
 static int app_console_gnss_event_callback(void *user_data, app_gnss_cb_type_t type, void *data) {
+    printf("\t--> ");
+
     switch (type) {
-        case APP_GNSS_CB_FIX:
-            printf("GNSS Fix received\n");
+        case APP_GNSS_CB_FIX: {
+            const app_gnss_fix_t *fix = data;
+            const float           lat = (float)fabs(fix->latitude);
+            const float           lon = (float)fabs(fix->longitude);
+
+            char s_lat;
+            char s_lon;
+            if (fix->latitude > 0)
+                s_lat = 'N';
+            else
+                s_lat = 'S';
+
+            if (fix->longitude > 0)
+                s_lon = 'E';
+            else
+                s_lon = 'W';
+
+            printf("GNSS fix received: %.6f %C, %.6f %C, alt: %.4f\n", lat, s_lat, lon, s_lon, fix->altitude);
 
             break;
+        }
+
         case APP_GNSS_CB_SAT:
             printf("GNSS Satellite info received\n");
 
             break;
-        case APP_GNSS_CB_RAW_NMEA:
-            printf("Raw NMEA data received\n");
+        case APP_GNSS_CB_RAW_NMEA: {
+            const app_gnss_nmea_t *nmea = data;
+            printf("Raw NMEA data received: type: %3s, len: %u\n", nmea->type, nmea->data_len);
 
             break;
+        }
+
         case APP_GNSS_CB_RAW_RTCM: {
             const app_gnss_rtcm_t *rtcm = data;
             printf("Raw RTCM data received: type: 0x%04x, len: %u\n", rtcm->type, rtcm->data_len);

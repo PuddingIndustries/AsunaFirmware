@@ -24,9 +24,10 @@
 #define GNSS_PPS_PIN       CONFIG_APP_GNSS_SERVER_PPS_GPIO
 
 typedef struct {
-    QueueHandle_t uart_rx_queue;
-    TaskHandle_t  uart_rx_task;
-    TaskHandle_t  pps_event_task;
+    QueueHandle_t     uart_rx_queue;
+    TaskHandle_t      uart_rx_task;
+    TaskHandle_t      pps_event_task;
+    SemaphoreHandle_t consumer_mutex;
 
     nmea_raw_t nmea_raw;
     nl_rtcm_t  rtcm_raw;
@@ -92,16 +93,25 @@ int app_gnss_server_init(void) {
 
     vListInitialise(&s_app_gnss_server_state.consumer_list);
 
+    s_app_gnss_server_state.consumer_mutex = xSemaphoreCreateMutex();
+    if (s_app_gnss_server_state.consumer_mutex == NULL) {
+        ESP_LOGE(LOG_TAG, "Failed to create GNSS consumer mutex");
+
+        return -1;
+    }
+
     if (xTaskCreate(app_gnss_uart_event_task, "asuna_gnss", 4096, &s_app_gnss_server_state, 5,
                     &s_app_gnss_server_state.uart_rx_task) != pdPASS) {
         ESP_LOGE(LOG_TAG, "Failed to create GNSS UART event task.");
-        return -1;
+
+        return -2;
     }
 
     if (xTaskCreate(app_gnss_pps_event_task, "asuna_pps", 4096, &s_app_gnss_server_state, 6,
                     &s_app_gnss_server_state.pps_event_task) != pdPASS) {
         ESP_LOGE(LOG_TAG, "Failed to create GNSS PPS event task.");
-        return -1;
+
+        return -3;
     }
 
     ESP_LOGI(LOG_TAG, "GNSS server initialization completed.");
@@ -127,7 +137,13 @@ app_gnss_cb_handle_t app_gnss_server_cb_register(app_gnss_cb_type_t type, app_gn
 
     item->xItemValue = (TickType_t)consumer;
 
+    if (xSemaphoreTake(s_app_gnss_server_state.consumer_mutex, portMAX_DELAY) != pdPASS) {
+        goto free_consumer_exit;
+    }
+
     vListInsert(&s_app_gnss_server_state.consumer_list, item);
+
+    xSemaphoreGive(s_app_gnss_server_state.consumer_mutex);
 
     return consumer;
 
@@ -138,6 +154,10 @@ free_consumer_exit:
 }
 
 void app_gnss_server_cb_unregister(app_gnss_cb_handle_t handle) {
+    if (xSemaphoreTake(s_app_gnss_server_state.consumer_mutex, portMAX_DELAY) != pdPASS) {
+        return;
+    }
+
     ListItem_t*       item = listGET_HEAD_ENTRY(&s_app_gnss_server_state.consumer_list);
     const ListItem_t* end  = listGET_END_MARKER(&s_app_gnss_server_state.consumer_list);
 
@@ -158,6 +178,8 @@ void app_gnss_server_cb_unregister(app_gnss_cb_handle_t handle) {
 
         item = listGET_NEXT(item);
     }
+
+    xSemaphoreGive(s_app_gnss_server_state.consumer_mutex);
 }
 
 static void app_gnss_send_init_commands(void) {
@@ -246,8 +268,33 @@ static void app_gnss_uart_event_task(void* parameters) {
 
         for (size_t i = 0; i < gnss_data_size; i++) {
             if (input_nmea(&state->nmea_raw, gnss_data_buf[i])) {
-                ESP_LOGD(LOG_TAG, "NMEA[%c%c%c] received", state->nmea_raw.type[0], state->nmea_raw.type[1],
+                ESP_LOGD(LOG_TAG, "NMEA[%c%c%c] received.", state->nmea_raw.type[0], state->nmea_raw.type[1],
                          state->nmea_raw.type[2]);
+
+                app_gnss_nmea_t nmea = {
+                    .type =
+                        {
+                            state->nmea_raw.type[0],
+                            state->nmea_raw.type[1],
+                            state->nmea_raw.type[2],
+                        },
+                    .data_len = state->nmea_raw.len,
+                    .data     = state->nmea_raw.buf,
+                };
+
+                app_gnss_dispatch(APP_GNSS_CB_RAW_NMEA, &nmea);
+
+                if (strcmp(nmea.type, "GGA") == 0 && state->nmea_raw.gga.status != 0) {
+                    app_gnss_fix_t fix = {
+                        .latitude  = state->nmea_raw.gga.lat,
+                        .longitude = state->nmea_raw.gga.lon,
+                        .altitude  = state->nmea_raw.gga.msl,
+
+                        /* TODO: Add more fields. */
+                    };
+
+                    app_gnss_dispatch(APP_GNSS_CB_FIX, &fix);
+                }
             }
 
             if (nl_input_rtcm3_v2(&state->rtcm_raw, gnss_data_buf[i])) {
@@ -264,9 +311,7 @@ static void app_gnss_uart_event_task(void* parameters) {
         }
 
         /* Dispatch */
-        app_gnss_dispatch(APP_GNSS_CB_FIX, NULL);
         app_gnss_dispatch(APP_GNSS_CB_SAT, NULL);
-        app_gnss_dispatch(APP_GNSS_CB_RAW_NMEA, NULL);
 
     free_buf_continue:
         free(gnss_data_buf);
@@ -296,7 +341,9 @@ static void app_gnss_pps_event_task(void* parameters) {
 }
 
 static void app_gnss_dispatch(app_gnss_cb_type_t type, void* data) {
-    /* TODO: Add a mutex here to protect resources. */
+    if (xSemaphoreTake(s_app_gnss_server_state.consumer_mutex, portMAX_DELAY) != pdPASS) {
+        return;
+    }
 
     ListItem_t*       item = listGET_HEAD_ENTRY(&s_app_gnss_server_state.consumer_list);
     const ListItem_t* end  = listGET_END_MARKER(&s_app_gnss_server_state.consumer_list);
@@ -314,4 +361,6 @@ static void app_gnss_dispatch(app_gnss_cb_type_t type, void* data) {
 
         item = listGET_NEXT(item);
     }
+
+    xSemaphoreGive(s_app_gnss_server_state.consumer_mutex);
 }

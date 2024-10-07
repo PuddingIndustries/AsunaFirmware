@@ -13,6 +13,8 @@ typedef struct {
     double latitude;
     double longitude;
     double altitude;
+
+    /* TODO: Add more fields. */
 } app_gnss_fix_t;
 
 typedef struct {
@@ -20,6 +22,12 @@ typedef struct {
     size_t   data_len;
     uint8_t *data;
 } app_gnss_rtcm_t;
+
+typedef struct {
+    char     type[3];
+    size_t   data_len;
+    uint8_t *data;
+} app_gnss_nmea_t;
 
 typedef struct {
     uint16_t gps_year;
