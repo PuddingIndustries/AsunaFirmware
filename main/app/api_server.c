@@ -87,19 +87,21 @@ int app_api_server_init(void) {
 
     ESP_LOGI(LOG_TAG, "Starting httpd...");
 
+    const size_t handler_count = sizeof(s_app_handler_list) / sizeof(s_app_handler_list[0]);
+
     httpd_config_t httpd_config = HTTPD_DEFAULT_CONFIG();
 
-    httpd_config.uri_match_fn = httpd_uri_match_wildcard;
-    httpd_config.open_fn      = app_api_server_socket_open_callback;
-    httpd_config.close_fn     = app_api_server_socket_close_callback;
+    httpd_config.max_uri_handlers = handler_count;
+    httpd_config.uri_match_fn     = httpd_uri_match_wildcard;
+    httpd_config.open_fn          = app_api_server_socket_open_callback;
+    httpd_config.close_fn         = app_api_server_socket_close_callback;
 
     s_app_api_handle = NULL;
 
     if (httpd_start(&s_app_api_handle, &httpd_config) != ESP_OK) {
+        ESP_LOGE(LOG_TAG, "Failed to start http server.");
         return -1;
     }
-
-    size_t handler_count = sizeof(s_app_handler_list) / sizeof(s_app_handler_list[0]);
 
     for (size_t i = 0; i < handler_count; i++) {
         const app_api_server_handler_t *handler = &s_app_handler_list[i];
