@@ -2,10 +2,11 @@
 #define APP_GNSS_SERVER_H
 
 typedef enum {
-    APP_GNSS_CB_FIX,
-    APP_GNSS_CB_SAT,
-    APP_GNSS_CB_RAW_NMEA,
-    APP_GNSS_CB_RAW_RTCM,
+    APP_GNSS_CB_FIX      = 1 << 0U,
+    APP_GNSS_CB_SAT      = 1 << 1U,
+    APP_GNSS_CB_RAW_NMEA = 1 << 2U,
+    APP_GNSS_CB_RAW_RTCM = 1 << 3U,
+    APP_GNSS_CB_PPS      = 1 << 4U,
 } app_gnss_cb_type_t;
 
 typedef struct {
@@ -14,8 +15,23 @@ typedef struct {
     double altitude;
 } app_gnss_fix_t;
 
+typedef struct {
+    uint16_t type;
+    size_t   data_len;
+    uint8_t *data;
+} app_gnss_rtcm_t;
+
+typedef struct {
+    uint16_t gps_year;
+    uint16_t gps_month;
+    uint16_t gps_day;
+    uint16_t gps_hour;
+    uint16_t gps_minute;
+    uint16_t gps_second;
+} app_gnss_pps_t;
+
 typedef void *app_gnss_cb_handle_t;
-typedef int (*app_gnss_cb_t)(void *handle, app_gnss_cb_type_t type, void *payload);
+typedef int   (*app_gnss_cb_t)(void *handle, app_gnss_cb_type_t type, void *payload);
 
 int                  app_gnss_server_init(void);
 app_gnss_cb_handle_t app_gnss_server_cb_register(app_gnss_cb_type_t type, app_gnss_cb_t cb, void *handle);

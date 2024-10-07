@@ -3,35 +3,42 @@ menu "Application Specific Configuration"
         int "LTE module RST pin number"
         default 7
         help
-            Select the pin number for LTE module.
+            Select the RST pin number for LTE module.
 
     config APP_NETIF_LTE_TX_GPIO
         int "LTE module TX pin number"
         default 17
         help
-            Select the pin number for LTE module.
+            Select the TX pin number for LTE module.
 
     config APP_NETIF_LTE_RX_GPIO
         int "LTE module RX pin number"
         default 18
         help
-            Select the pin number for LTE module.
+            Select the RX pin number for LTE module.
 
     config APP_GNSS_SERVER_TX_GPIO
         int "GNSS module TX pin number"
         default 43
         help
-            Select the pin number for GNSS module.
+            Select the TX pin number for GNSS module.
 
     config APP_GNSS_SERVER_RX_GPIO
         int "GNSS module RX pin number"
         default 44
         help
-            Select the pin number for GNSS module.
+            Select the RX pin number for GNSS module.
 
     config APP_GNSS_SERVER_RST_GPIO
         int "GNSS module RST pin number"
         default 2
         help
-            Select the pin number for RST module.
+            Select the RST pin number for GNSS module.
+
+    config APP_GNSS_SERVER_PPS_GPIO
+        int "GNSS module PPS pin number"
+        default 1
+        help
+            Select the PPS pin number for GNSS module.
+
 endmenu

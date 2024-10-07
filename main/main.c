@@ -8,6 +8,7 @@
 #include "freertos/task.h"
 
 /* IDF */
+#include "driver/gpio.h"
 #include "esp_log.h"
 #include "esp_system.h"
 #include "nvs_flash.h"
@@ -40,6 +41,8 @@ void app_main(void) {
         ret = nvs_flash_init();
     }
     ESP_ERROR_CHECK(ret);
+
+    ESP_ERROR_CHECK(gpio_install_isr_service(ESP_INTR_FLAG_IRAM));
 
     ESP_LOGI(LOG_TAG, "Project Asuna -- Initializing...");
 

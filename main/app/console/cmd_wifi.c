@@ -5,19 +5,13 @@
 
 /* App */
 #include "app/console/cmd_wifi.h"
+#include "app/console/private.h"
 #include "app/netif_wifi.h"
-
-typedef int (*app_console_wifi_subcommand_t)(int argc, char **argv);
-
-typedef struct {
-    const char                   *command;
-    app_console_wifi_subcommand_t handler;
-} app_console_wifi_handler_t;
 
 static int app_console_wifi_subcommand_help(int argc, char **argv);
 static int app_console_wifi_subcommand_status(int argc, char **argv);
 
-static const app_console_wifi_handler_t s_app_console_wifi_handlers[] = {
+static const app_console_subcommand_t s_app_console_wifi_subcommands[] = {
     {.command = "help", .handler = app_console_wifi_subcommand_help},
     {.command = "status", .handler = app_console_wifi_subcommand_status},
 };
@@ -28,14 +22,14 @@ static int app_console_wifi_func(int argc, char **argv) {
     }
 
     char  *cmd            = argv[1];
-    size_t commands_count = sizeof(s_app_console_wifi_handlers) / sizeof(s_app_console_wifi_handlers[0]);
+    size_t commands_count = sizeof(s_app_console_wifi_subcommands) / sizeof(s_app_console_wifi_subcommands[0]);
 
     for (size_t i = 0; i < commands_count; i++) {
-        if (strcmp(cmd, s_app_console_wifi_handlers[i].command) != 0) {
+        if (strcmp(cmd, s_app_console_wifi_subcommands[i].command) != 0) {
             continue;
         }
 
-        return s_app_console_wifi_handlers[i].handler(argc - 1, &argv[1]);
+        return s_app_console_wifi_subcommands[i].handler(argc - 1, &argv[1]);
     }
 
     return 0;
