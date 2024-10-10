@@ -21,24 +21,24 @@ static int app_console_gnss_event_callback(void *user_data, app_gnss_cb_type_t t
     printf("\t--> ");
 
     switch (type) {
-        case APP_GNSS_CB_FIX: {
-            const app_gnss_fix_t *fix = data;
-            const float           lat = (float)fabs(fix->latitude);
-            const float           lon = (float)fabs(fix->longitude);
+        case APP_GNSS_CB_LLA_GET: {
+            const app_gnss_sol_t *sol = data;
+            const double           lat = fabs(sol->latitude);
+            const double           lon = fabs(sol->longitude);
 
             char s_lat;
             char s_lon;
-            if (fix->latitude > 0)
+            if (sol->latitude > 0)
                 s_lat = 'N';
             else
                 s_lat = 'S';
 
-            if (fix->longitude > 0)
+            if (sol->longitude > 0)
                 s_lon = 'E';
             else
                 s_lon = 'W';
 
-            printf("GNSS fix received: %.6f %C, %.6f %C, alt: %.4f\n", lat, s_lat, lon, s_lon, fix->altitude);
+            printf("GNSS sol received: %.8f %C, %.8f %C, alt: %.3f\n", lat, s_lat, lon, s_lon, sol->altitude);
 
             break;
         }
