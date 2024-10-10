@@ -2,7 +2,7 @@
 #define APP_GNSS_SERVER_H
 
 typedef enum {
-    APP_GNSS_CB_FIX      = 1 << 0U,
+    APP_GNSS_CB_LLA_GET      = 1 << 0U,
     APP_GNSS_CB_SAT      = 1 << 1U,
     APP_GNSS_CB_RAW_NMEA = 1 << 2U,
     APP_GNSS_CB_RAW_RTCM = 1 << 3U,
@@ -15,7 +15,7 @@ typedef struct {
     double altitude;
 
     /* TODO: Add more fields. */
-} app_gnss_fix_t;
+} app_gnss_sol_t;
 
 typedef struct {
     uint16_t type;

@@ -23,6 +23,11 @@
 #define GNSS_RST_PIN       CONFIG_APP_GNSS_SERVER_RST_GPIO
 #define GNSS_PPS_PIN       CONFIG_APP_GNSS_SERVER_PPS_GPIO
 
+#define FIX_POSITION_CHECK_INTERVAL 1 // Check interval in seconds
+#define FIX_POSITION_WINDOW 30 // Number of samples to consider
+#define FIX_POSITION_THRESHOLD 1.0 // Position change threshold in meters (3cm)
+
+
 typedef struct {
     QueueHandle_t     uart_rx_queue;
     TaskHandle_t      uart_rx_task;
@@ -41,8 +46,20 @@ typedef struct {
     void*              user_data;
 } app_gnss_consumer_t;
 
+typedef struct {
+    double lat_sum;
+    double lon_sum;
+    double height_sum;
+    int count;
+    double last_lat;
+    double last_lon;
+    double last_height;
+} position_stats_t;
+
 static const char* LOG_TAG = "asuna_gnss";
 
+static position_stats_t s_position_stats = {0};
+static bool s_rtk_base_set = false;
 static const char* s_app_gnss_init_commands[] = {
     "$PAIR862,0,0,253*2E\r\n",
     "$PAIR092,1*2C\r\n",
@@ -57,6 +74,7 @@ static void app_gnss_reset(void);
 static void app_gnss_pps_isr_handler(void* arg);
 static void app_gnss_send_init_commands(void);
 static void app_gnss_dispatch(app_gnss_cb_type_t type, void* data);
+static void check_and_set_rtk_base_position(double lat, double lon, double height);
 
 int app_gnss_server_init(void) {
     gpio_config_t pin_conf = {
@@ -116,6 +134,69 @@ int app_gnss_server_init(void) {
 
     ESP_LOGI(LOG_TAG, "GNSS server initialization completed.");
     return 0;
+}
+
+static void check_and_set_rtk_base_position(double lat, double lon, double height) {
+    if (s_rtk_base_set) {
+        return; // RTK base position already set
+    }
+
+    TickType_t current_time = xTaskGetTickCount();
+    static TickType_t last_check_time = 0;
+
+    if ((current_time - last_check_time) >= pdMS_TO_TICKS(FIX_POSITION_CHECK_INTERVAL * 1000)) {
+        last_check_time = current_time;
+
+        // Check if position is stable
+        if (s_position_stats.count > 0) {
+            double dlat = fabs(lat - s_position_stats.last_lat) * 111000; // Approx. meters
+            double dlon = fabs(lon - s_position_stats.last_lon) * 111000 * cos(lat * M_PI / 180);
+            double dheight = fabs(height - s_position_stats.last_height);
+
+            if (sqrt(dlat*dlat + dlon*dlon + dheight*dheight) > FIX_POSITION_THRESHOLD) {
+                // Position changed too much, reset stats
+                memset(&s_position_stats, 0, sizeof(s_position_stats));
+            }
+        }
+
+        ESP_LOGD(LOG_TAG, "s_position_stats.count:%d", s_position_stats.count);
+
+        // Update stats
+        s_position_stats.lat_sum += lat;
+        s_position_stats.lon_sum += lon;
+        s_position_stats.height_sum += height;
+        s_position_stats.count++;
+        s_position_stats.last_lat = lat;
+        s_position_stats.last_lon = lon;
+        s_position_stats.last_height = height;
+
+        // Check if we have enough samples
+        if (s_position_stats.count >= FIX_POSITION_WINDOW) {
+            double avg_lat = s_position_stats.lat_sum / s_position_stats.count;
+            double avg_lon = s_position_stats.lon_sum / s_position_stats.count;
+            double avg_height = s_position_stats.height_sum / s_position_stats.count;
+
+            // Set RTK base position
+            char command[100];
+            snprintf(command, sizeof(command), "$PAIR604,1,1,%.7f,%.7f,%.2f*", avg_lat, avg_lon, avg_height);
+            
+            // Calculate checksum
+            uint8_t checksum = 0;
+            for (int i = 1; command[i] != '*'; i++) {
+                checksum ^= command[i];
+            }
+            
+            // Add checksum and line ending
+            char final_command[120];
+            snprintf(final_command, sizeof(final_command), "%s%02X\r\n", command, checksum);
+            
+            // Send command
+            uart_write_bytes(GNSS_UART_NUM, final_command, strlen(final_command));
+            ESP_LOGI(LOG_TAG, "Sent RTK base position command: %s", final_command);
+
+            s_rtk_base_set = true;
+        }
+    }
 }
 
 app_gnss_cb_handle_t app_gnss_server_cb_register(app_gnss_cb_type_t type, app_gnss_cb_t callback, void* handle) {
@@ -285,7 +366,7 @@ static void app_gnss_uart_event_task(void* parameters) {
                 app_gnss_dispatch(APP_GNSS_CB_RAW_NMEA, &nmea);
 
                 if (strcmp(nmea.type, "GGA") == 0 && state->nmea_raw.gga.status != 0) {
-                    app_gnss_fix_t fix = {
+                    app_gnss_sol_t sol = {
                         .latitude  = state->nmea_raw.gga.lat,
                         .longitude = state->nmea_raw.gga.lon,
                         .altitude  = state->nmea_raw.gga.msl,
@@ -293,7 +374,10 @@ static void app_gnss_uart_event_task(void* parameters) {
                         /* TODO: Add more fields. */
                     };
 
-                    app_gnss_dispatch(APP_GNSS_CB_FIX, &fix);
+                    // Check and set RTK base position if stable
+                    check_and_set_rtk_base_position(sol.latitude, sol.longitude, sol.altitude);
+
+                    app_gnss_dispatch(APP_GNSS_CB_LLA_GET, &sol);
                 }
             }
 
