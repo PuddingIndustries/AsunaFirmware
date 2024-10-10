@@ -17,7 +17,7 @@
 #define APP_NETIF_WIFI_NVS_NAMESPACE "a_netif_wifi"
 #define APP_NETIF_WIFI_NVS_VERSION   1 /* DO NOT CHANGE THIS VALUE UNLESS THERE IS A STRUCTURE UPDATE */
 
-#define APP_NETIF_WIFI_AP_SSID_PREFIX  "ASUNA_"
+#define APP_NETIF_WIFI_AP_SSID_PREFIX  "HI32B_"
 #define APP_NETIF_WIFI_AP_DEFAULT_CHAN 1
 #define APP_NETIF_WIFI_AP_MAX_CLIENTS  8
 #define APP_NETIF_WIFI_AP_SUPPORT_WPA3 1
@@ -100,6 +100,7 @@ int app_netif_wifi_init(void) {
     }
 
     app_netif_wifi_config_t app_cfg;
+
     if (app_netif_wifi_config_get(&app_cfg) != 0) {
         ESP_LOGW(LOG_TAG, "Configuration invalid, restore to default...");
         app_netif_wifi_config_init(&app_cfg);
@@ -297,11 +298,11 @@ void app_netif_wifi_config_init(app_netif_wifi_config_t *config) {
     config->ap_config.chan = APP_NETIF_WIFI_AP_DEFAULT_CHAN;
 
     ESP_ERROR_CHECK(esp_wifi_get_mac(WIFI_IF_AP, ap_mac));
-    snprintf(config->ap_config.ssid, sizeof(config->ap_config.ssid), APP_NETIF_WIFI_AP_SSID_PREFIX "%02X%02X%02X",
-             ap_mac[3], ap_mac[4], ap_mac[5]);
+    snprintf(config->ap_config.ssid, sizeof(config->ap_config.ssid), APP_NETIF_WIFI_AP_SSID_PREFIX "%02x%02x%02x%02x",
+             ap_mac[2], ap_mac[3], ap_mac[4], ap_mac[5]);
 
-    snprintf(config->ap_config.pass, sizeof(config->ap_config.pass), "%02x%02x%02x%02x", ap_mac[2], ap_mac[3],
-             ap_mac[4], ap_mac[5]);
+    snprintf(config->ap_config.pass, sizeof(config->ap_config.pass), "%02x%02x%02x%02x", 
+             ap_mac[2], ap_mac[3], ap_mac[4], ap_mac[5]);
 
     snprintf((char *)config->sta_config.ssid, sizeof(config->sta_config.ssid), APP_NETIF_WIFI_STA_DEFAULT_SSID);
     snprintf((char *)config->sta_config.pass, sizeof(config->sta_config.pass), APP_NETIF_WIFI_STA_DEFAULT_PASS);
