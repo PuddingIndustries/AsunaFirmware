@@ -12,7 +12,6 @@
 #include "nvs_flash.h"
 
 /* LLCC68 */
-#include "llcc68.h"
 #include "llcc68_hal_init.h"
 
 /* App */
@@ -31,12 +30,25 @@
 #define APP_LORA_SERVER_PIN_INT  9
 #define APP_LORA_SERVER_PIN_BUSY 14
 
+#define APP_LORA_SERVER_CMD_Q_LEN (16)
+
 #define APP_LORA_SERVER_FREQUENCY_MIN (470 * 1000 * 1000)     /* TODO: Use Kconfig */
 #define APP_LORA_SERVER_FREQUENCY_MAX (510 * 1000 * 1000 - 1) /* TODO: Use Kconfig */
+
+typedef enum {
+    APP_LORA_SERVER_CMD_TRANSMIT,
+    APP_LORA_SERVER_CMD_UPDATE_PARAMS,
+} app_lora_server_cmd_t;
+
+typedef struct {
+    app_lora_server_cmd_t cmd;
+    void                 *params;
+} app_lora_server_cmd_queue_item_t;
 
 typedef struct {
     llcc68_hal_context_t hal_context;
     SemaphoreHandle_t    config_mutex;
+    QueueHandle_t        cmd_queue;
 } app_lora_server_state_t;
 
 static const char *LOG_TAG = "asuna_lora";
@@ -70,6 +82,8 @@ static const char *APP_LORA_SERVER_CFG_KEY_CR      = "cr";      /* Coding Rate *
 static const char *APP_LORA_SERVER_CFG_KEY_LDR_OPT = "ldr_opt"; /* Low Data-Rate Optimization */
 
 int app_lora_server_init(void) {
+    int ret = 0;
+
     ESP_LOGI(LOG_TAG, "Initializing LoRa server...");
 
     app_lora_server_gpio_init();
@@ -85,37 +99,56 @@ int app_lora_server_init(void) {
         return -3;
     }
 
-    app_lora_server_config_t app_cfg;
-    if (app_lora_server_config_get(&app_cfg) != 0) {
-        ESP_LOGW(LOG_TAG, "Configuration invalid, restore to default...");
-        app_lora_server_config_init(&app_cfg);
+    s_lora_server_state.cmd_queue = xQueueCreate(APP_LORA_SERVER_CMD_Q_LEN, sizeof(app_lora_server_cmd_queue_item_t));
+    if (s_lora_server_state.cmd_queue == NULL) {
+        ESP_LOGE(LOG_TAG, "Failed to create command queue.");
 
-        if (app_lora_server_config_set(&app_cfg) != 0) {
+        ret = -4;
+        goto del_mutex_exit;
+    }
+
+    lora_modem_config_t modem_cfg;
+    if (app_lora_server_config_get(&modem_cfg) != 0) {
+        ESP_LOGW(LOG_TAG, "Configuration invalid, restore to default...");
+        app_lora_server_config_init(&modem_cfg);
+
+        if (app_lora_server_config_set(&modem_cfg) != 0) {
             ESP_LOGE(LOG_TAG, "Configuration validation failed...");
-            return -4;
+            goto del_queue_exit;
         }
     }
 
-    xTaskCreate(app_lora_server_task, "asuna_lora", 4096, &s_lora_server_state, 3, NULL);
+    if (xTaskCreate(app_lora_server_task, "asuna_lora", 4096, &s_lora_server_state, 3, NULL) != pdPASS) {
+        ESP_LOGE(LOG_TAG, "Task creation failed...");
+        goto del_queue_exit;
+    }
 
     ESP_LOGI(LOG_TAG, "Initialization completed.");
 
     return 0;
+
+del_queue_exit:
+    vQueueDelete(s_lora_server_state.cmd_queue);
+
+del_mutex_exit:
+    vSemaphoreDelete(s_lora_server_state.config_mutex);
+
+    return ret;
 }
 
-void app_lora_server_config_init(app_lora_server_config_t *config) {
+void app_lora_server_config_init(lora_modem_config_t *config) {
     config->frequency        = 475600000; /* 475.600 MHz */
-    config->bandwidth        = APP_LORA_SERVER_BW_125;
-    config->coding_rate      = APP_LORA_SERVER_CR_1;
-    config->spreading_factor = APP_LORA_SERVER_SF_7;
+    config->bandwidth        = LORA_MODEM_BW_125;
+    config->coding_rate      = LORA_MODEM_CR_1;
+    config->spreading_factor = LORA_MODEM_SF_7;
     config->ldr_optimization = false;
 }
 
-int app_lora_server_config_set(const app_lora_server_config_t *config) {
+int app_lora_server_config_set(const lora_modem_config_t *config) {
     /* ---- Sanity checks ---- */
-    if (config->bandwidth >= APP_LORA_SERVER_BW_INVALID) return -1;
-    if (config->coding_rate >= APP_LORA_SERVER_CR_INVALID) return -1;
-    if (config->spreading_factor >= APP_LORA_SERVER_SF_INVALID) return -1;
+    if (config->bandwidth >= LORA_MODEM_BW_INVALID) return -1;
+    if (config->coding_rate >= LORA_MODEM_CR_INVALID) return -1;
+    if (config->spreading_factor >= LORA_MODEM_SF_INVALID) return -1;
     if (config->frequency > APP_LORA_SERVER_FREQUENCY_MAX) return -1;
     if (config->frequency < APP_LORA_SERVER_FREQUENCY_MIN) return -1;
 
@@ -142,10 +175,20 @@ int app_lora_server_config_set(const app_lora_server_config_t *config) {
 
     xSemaphoreGive(s_lora_server_state.config_mutex);
 
+    const app_lora_server_cmd_queue_item_t cmd = {
+        .cmd    = APP_LORA_SERVER_CMD_UPDATE_PARAMS,
+        .params = NULL,
+    };
+
+    if (xQueueSend(s_lora_server_state.cmd_queue, &cmd, pdMS_TO_TICKS(100)) != pdPASS) {
+        ESP_LOGW(LOG_TAG, "Failed to issue configuration update command.");
+        return -1;
+    }
+
     return 0;
 }
 
-int app_lora_server_config_get(app_lora_server_config_t *config) {
+int app_lora_server_config_get(lora_modem_config_t *config) {
     int       ret = 0;
     esp_err_t err;
 
@@ -317,42 +360,6 @@ static llcc68_hal_status_t app_llcc68_hal_delay(void *handle, uint32_t msec) {
     return LLCC68_HAL_STATUS_OK;
 }
 
-static int app_lora_server_comms_init(void *context) {
-    llcc68_status_t status = LLCC68_STATUS_ERROR;
-
-    status = llcc68_reset(context);
-    if (status != LLCC68_STATUS_OK) {
-        return -1;
-    }
-
-    status = llcc68_init_retention_list(context);
-    if (status != LLCC68_STATUS_OK) {
-        return -2;
-    }
-
-    status = llcc68_set_reg_mode(context, LLCC68_REG_MODE_DCDC);
-    if (status != LLCC68_STATUS_OK) {
-        return -3;
-    }
-
-    status = llcc68_set_dio2_as_rf_sw_ctrl(context, true);
-    if (status != LLCC68_STATUS_OK) {
-        return -4;
-    }
-
-    status = llcc68_set_dio3_as_tcxo_ctrl(context, LLCC68_TCXO_CTRL_3_3V, 500);
-    if (status != LLCC68_STATUS_OK) {
-        return -5;
-    }
-
-    status = llcc68_cal_img_in_mhz(context, 470, 510);
-    if (status != LLCC68_STATUS_OK) {
-        return -6;
-    }
-
-    return 0;
-}
-
 static void app_lora_server_task(void *argument) {
     void *context = &((app_lora_server_state_t *)argument)->hal_context;
 
@@ -360,7 +367,7 @@ static void app_lora_server_task(void *argument) {
 
     for (;;) {
         if (!is_initialized) {
-            int ret = app_lora_server_comms_init(context);
+            int ret = lora_modem_init(context);
             if (ret != 0) {
                 ESP_LOGE(LOG_TAG, "Failed to initialize LoRa modem: %d", ret);
 
@@ -372,7 +379,23 @@ static void app_lora_server_task(void *argument) {
             ESP_LOGI(LOG_TAG, "LoRa modem initialized.");
         }
 
-        /* TODO: Handle device requests. */
-        vTaskSuspend(NULL);
+        app_lora_server_cmd_queue_item_t cmd;
+        if (xQueueReceive(s_lora_server_state.cmd_queue, &cmd, portMAX_DELAY) != pdPASS) {
+            ESP_LOGW(LOG_TAG, "Failed to receive from queue.");
+            continue;
+        }
+
+        switch (cmd.cmd) {
+            case APP_LORA_SERVER_CMD_UPDATE_PARAMS: {
+                lora_modem_config_t cfg;
+                app_lora_server_config_get(&cfg);
+                lora_modem_set_config(context, &cfg);
+
+                break;
+            }
+
+            default:
+                break;
+        }
     }
 }
