@@ -32,8 +32,17 @@ typedef enum {
     LORA_MODEM_CR_INVALID,
 } lora_modem_cr_t;
 
+typedef enum {
+    LORA_MODEM_NETWORK_PUBLIC,  /* Public network, Sync word 0x3444 */
+    LORA_MODEM_NETWORK_PRIVATE, /* Private network, sync word 0x1424 */
+} lora_modem_network_type_t;
+
 typedef struct {
-    uint32_t        frequency;
+    uint32_t frequency;
+    uint8_t  power;
+
+    lora_modem_network_type_t network_type;
+
     lora_modem_bw_t bandwidth;
     lora_modem_sf_t spreading_factor;
     lora_modem_cr_t coding_rate;

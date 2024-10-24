@@ -32,8 +32,11 @@
 
 #define APP_LORA_SERVER_CMD_Q_LEN (16)
 
-#define APP_LORA_SERVER_FREQUENCY_MIN (470 * 1000 * 1000)     /* TODO: Use Kconfig */
-#define APP_LORA_SERVER_FREQUENCY_MAX (510 * 1000 * 1000 - 1) /* TODO: Use Kconfig */
+#define APP_LORA_SERVER_FREQUENCY_MIN     (868 * 1000 * 1000)     /* TODO: Use Kconfig */
+#define APP_LORA_SERVER_FREQUENCY_MAX     (915 * 1000 * 1000 - 1) /* TODO: Use Kconfig */
+#define APP_LORA_SERVER_FREQUENCY_DEFAULT (868400000UL)           /* 868.400 MHz */
+
+#define APP_LORA_SERVER_POWER_DEFAULT (7) /* 7dBm */
 
 typedef enum {
     APP_LORA_SERVER_CMD_TRANSMIT,
@@ -42,7 +45,8 @@ typedef enum {
 
 typedef struct {
     app_lora_server_cmd_t cmd;
-    void                 *params;
+    void                 *data;
+    size_t                data_len;
 } app_lora_server_cmd_queue_item_t;
 
 typedef struct {
@@ -74,12 +78,14 @@ static app_lora_server_state_t s_lora_server_state = {
     .config_mutex = NULL,
 };
 
-static const char *APP_NETIF_WIFI_CFG_KEY_FLAG     = "cfg_valid";
-static const char *APP_LORA_SERVER_CFG_KEY_FREQ    = "freq";    /* Frequency */
-static const char *APP_LORA_SERVER_CFG_KEY_BW      = "bw";      /* Bandwidth */
-static const char *APP_LORA_SERVER_CFG_KEY_SF      = "sf";      /* Spreading Factor */
-static const char *APP_LORA_SERVER_CFG_KEY_CR      = "cr";      /* Coding Rate */
-static const char *APP_LORA_SERVER_CFG_KEY_LDR_OPT = "ldr_opt"; /* Low Data-Rate Optimization */
+static const char *APP_LORA_SERVER_CFG_KEY_FLAG    = "cfg_valid"; /* Configuration key */
+static const char *APP_LORA_SERVER_CFG_KEY_FREQ    = "freq";      /* Frequency */
+static const char *APP_LORA_SERVER_CFG_KEY_POWER   = "power";     /* Transmit Power */
+static const char *APP_LORA_SERVER_CFG_KEY_TYPE    = "type";      /* Network Type */
+static const char *APP_LORA_SERVER_CFG_KEY_BW      = "bw";        /* Bandwidth */
+static const char *APP_LORA_SERVER_CFG_KEY_SF      = "sf";        /* Spreading Factor */
+static const char *APP_LORA_SERVER_CFG_KEY_CR      = "cr";        /* Coding Rate */
+static const char *APP_LORA_SERVER_CFG_KEY_LDR_OPT = "ldr_opt";   /* Low Data-Rate Optimization */
 
 int app_lora_server_init(void) {
     int ret = 0;
@@ -137,10 +143,12 @@ del_mutex_exit:
 }
 
 void app_lora_server_config_init(lora_modem_config_t *config) {
-    config->frequency        = 475600000; /* 475.600 MHz */
+    config->frequency        = APP_LORA_SERVER_FREQUENCY_DEFAULT;
+    config->power            = APP_LORA_SERVER_POWER_DEFAULT;
+    config->network_type     = LORA_MODEM_NETWORK_PRIVATE;
     config->bandwidth        = LORA_MODEM_BW_125;
     config->coding_rate      = LORA_MODEM_CR_1;
-    config->spreading_factor = LORA_MODEM_SF_7;
+    config->spreading_factor = LORA_MODEM_SF_11;
     config->ldr_optimization = false;
 }
 
@@ -161,9 +169,11 @@ int app_lora_server_config_set(const lora_modem_config_t *config) {
     ESP_ERROR_CHECK(nvs_open(APP_LORA_SERVER_NVS_NAMESPACE, NVS_READWRITE, &handle));
 
     /* ---- Store configuration ---- */
-    ESP_ERROR_CHECK(nvs_set_u8(handle, APP_NETIF_WIFI_CFG_KEY_FLAG, APP_LORA_SERVER_NVS_VERSION));
+    ESP_ERROR_CHECK(nvs_set_u8(handle, APP_LORA_SERVER_CFG_KEY_FLAG, APP_LORA_SERVER_NVS_VERSION));
 
     ESP_ERROR_CHECK(nvs_set_u32(handle, APP_LORA_SERVER_CFG_KEY_FREQ, config->frequency));
+    ESP_ERROR_CHECK(nvs_set_u8(handle, APP_LORA_SERVER_CFG_KEY_POWER, config->power));
+    ESP_ERROR_CHECK(nvs_set_u8(handle, APP_LORA_SERVER_CFG_KEY_TYPE, config->network_type));
     ESP_ERROR_CHECK(nvs_set_u8(handle, APP_LORA_SERVER_CFG_KEY_BW, config->bandwidth));
     ESP_ERROR_CHECK(nvs_set_u8(handle, APP_LORA_SERVER_CFG_KEY_CR, config->coding_rate));
     ESP_ERROR_CHECK(nvs_set_u8(handle, APP_LORA_SERVER_CFG_KEY_SF, config->spreading_factor));
@@ -176,8 +186,9 @@ int app_lora_server_config_set(const lora_modem_config_t *config) {
     xSemaphoreGive(s_lora_server_state.config_mutex);
 
     const app_lora_server_cmd_queue_item_t cmd = {
-        .cmd    = APP_LORA_SERVER_CMD_UPDATE_PARAMS,
-        .params = NULL,
+        .cmd      = APP_LORA_SERVER_CMD_UPDATE_PARAMS,
+        .data     = NULL,
+        .data_len = 0,
     };
 
     if (xQueueSend(s_lora_server_state.cmd_queue, &cmd, pdMS_TO_TICKS(100)) != pdPASS) {
@@ -207,7 +218,7 @@ int app_lora_server_config_get(lora_modem_config_t *config) {
     /* Check NVS data flag */
 
     uint8_t cfg_flag;
-    if (nvs_get_u8(handle, APP_NETIF_WIFI_CFG_KEY_FLAG, &cfg_flag) != ESP_OK) {
+    if (nvs_get_u8(handle, APP_LORA_SERVER_CFG_KEY_FLAG, &cfg_flag) != ESP_OK) {
         ret = -1;
         goto release_lock_exit;
     }
@@ -222,6 +233,14 @@ int app_lora_server_config_get(lora_modem_config_t *config) {
 
     /* ---- Load configuration: frequency ---- */
     ESP_ERROR_CHECK(nvs_get_u32(handle, APP_LORA_SERVER_CFG_KEY_FREQ, &config->frequency));
+
+    /* ---- Load configuration: power ---- */
+    ESP_ERROR_CHECK(nvs_get_u8(handle, APP_LORA_SERVER_CFG_KEY_POWER, &config->power));
+
+    /* ---- Load configuration: network_type ---- */
+    uint8_t network_type;
+    ESP_ERROR_CHECK(nvs_get_u8(handle, APP_LORA_SERVER_CFG_KEY_TYPE, &network_type));
+    config->network_type = network_type;
 
     /* ---- Load configuration: bandwidth ---- */
     uint8_t bandwidth;
@@ -250,6 +269,35 @@ release_lock_exit:
     xSemaphoreGive(s_lora_server_state.config_mutex);
 
     return ret;
+}
+
+int app_lora_server_broadcast(const uint8_t *data, size_t length) {
+    void *payload = malloc(length);
+    if (payload == NULL) {
+        ESP_LOGE(LOG_TAG, "Failed to allocate packet buffer");
+
+        return -1;
+    }
+
+    memcpy(payload, data, length);
+
+    app_lora_server_cmd_queue_item_t cmd = {
+        .cmd      = APP_LORA_SERVER_CMD_TRANSMIT,
+        .data     = payload,
+        .data_len = length,
+    };
+
+    if (xQueueSend(s_lora_server_state.cmd_queue, &cmd, pdMS_TO_TICKS(100)) != pdPASS) {
+        ESP_LOGW(LOG_TAG, "Failed to enqueue packet.");
+        goto free_buf_exit;
+    }
+
+    return 0;
+
+free_buf_exit:
+    free(payload);
+
+    return -1;
 }
 
 static void app_lora_server_gpio_init(void) {
@@ -349,7 +397,7 @@ static llcc68_hal_status_t app_llcc68_hal_wait_busy(void *handle) {
             break;
         }
 
-        vTaskDelay(pdMS_TO_TICKS(100));
+        vTaskDelay(pdMS_TO_TICKS(5));
     }
 
     return LLCC68_HAL_STATUS_OK;
@@ -363,8 +411,8 @@ static llcc68_hal_status_t app_llcc68_hal_delay(void *handle, uint32_t msec) {
 static void app_lora_server_task(void *argument) {
     void *context = &((app_lora_server_state_t *)argument)->hal_context;
 
-    bool is_initialized = false;
-
+    bool                             is_initialized = false;
+    app_lora_server_cmd_queue_item_t cmd;
     for (;;) {
         if (!is_initialized) {
             int ret = lora_modem_init(context);
@@ -375,11 +423,14 @@ static void app_lora_server_task(void *argument) {
                 continue;
             }
 
+            /* Initial synchronize LoRa modem configuration */
+            cmd.cmd = APP_LORA_SERVER_CMD_UPDATE_PARAMS;
+            xQueueSend(s_lora_server_state.cmd_queue, &cmd, portMAX_DELAY);
+
             is_initialized = true;
             ESP_LOGI(LOG_TAG, "LoRa modem initialized.");
         }
 
-        app_lora_server_cmd_queue_item_t cmd;
         if (xQueueReceive(s_lora_server_state.cmd_queue, &cmd, portMAX_DELAY) != pdPASS) {
             ESP_LOGW(LOG_TAG, "Failed to receive from queue.");
             continue;
@@ -388,9 +439,27 @@ static void app_lora_server_task(void *argument) {
         switch (cmd.cmd) {
             case APP_LORA_SERVER_CMD_UPDATE_PARAMS: {
                 lora_modem_config_t cfg;
-                app_lora_server_config_get(&cfg);
-                lora_modem_set_config(context, &cfg);
+                if (app_lora_server_config_get(&cfg) != 0) {
+                    ESP_LOGW(LOG_TAG, "Failed to get LoRa modem configuration.");
+                    continue;
+                }
 
+                if (lora_modem_set_config(context, &cfg) != 0) {
+                    ESP_LOGW(LOG_TAG, "Failed to set LoRa modem configuration.");
+                    continue;
+                }
+
+                ESP_LOGI(LOG_TAG, "LoRa modem configuration updated.");
+                break;
+            }
+
+            case APP_LORA_SERVER_CMD_TRANSMIT: {
+                const int ret = lora_modem_transmit(context, cmd.data, cmd.data_len);
+
+                free(cmd.data);
+                if (ret != 0) {
+                    ESP_LOGW(LOG_TAG, "Failed to transmit data.");
+                }
                 break;
             }
 

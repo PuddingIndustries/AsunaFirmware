@@ -42,7 +42,7 @@ typedef struct {
     void                       *parameter;
 } app_netif_wifi_queue_item_t;
 
-static const char *APP_NETIF_WIFI_CFG_KEY_FLAG        = "cfg_valid";
+static const char *APP_LORA_SERVER_CFG_KEY_FLAG        = "cfg_valid";
 static const char *APP_NETIF_WIFI_CFG_KEY_AP_ENABLED  = "ap_enabled";
 static const char *APP_NETIF_WIFI_CFG_KEY_AP_CHAN     = "ap_chan";
 static const char *APP_NETIF_WIFI_CFG_KEY_AP_SSID     = "ap_ssid";
@@ -166,7 +166,7 @@ int app_netif_wifi_config_get(app_netif_wifi_config_t *config) {
     /* ---- Check NVS data flag ---- */
 
     uint8_t cfg_flag;
-    if (nvs_get_u8(handle, APP_NETIF_WIFI_CFG_KEY_FLAG, &cfg_flag) != ESP_OK) {
+    if (nvs_get_u8(handle, APP_LORA_SERVER_CFG_KEY_FLAG, &cfg_flag) != ESP_OK) {
         ret = -1;
         goto release_lock_exit;
     }
@@ -268,7 +268,7 @@ int app_netif_wifi_config_set(const app_netif_wifi_config_t *config) {
     ESP_ERROR_CHECK(nvs_open(APP_NETIF_WIFI_NVS_NAMESPACE, NVS_READWRITE, &handle));
 
     /* ---- Store configuration ---- */
-    ESP_ERROR_CHECK(nvs_set_u8(handle, APP_NETIF_WIFI_CFG_KEY_FLAG, APP_NETIF_WIFI_NVS_VERSION));
+    ESP_ERROR_CHECK(nvs_set_u8(handle, APP_LORA_SERVER_CFG_KEY_FLAG, APP_NETIF_WIFI_NVS_VERSION));
 
     ESP_ERROR_CHECK(nvs_set_u8(handle, APP_NETIF_WIFI_CFG_KEY_AP_ENABLED, config->ap_enabled));
     ESP_ERROR_CHECK(nvs_set_u8(handle, APP_NETIF_WIFI_CFG_KEY_STA_ENABLED, config->sta_enabled));

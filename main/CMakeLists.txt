@@ -8,6 +8,7 @@ idf_component_register(SRCS
     "app/console/cmd_free.c"
     "app/console/cmd_gnss.c"
     "app/console/cmd_ip.c"
+    "app/console/cmd_lora.c"
     "app/console/cmd_ps.c"
     "app/console/cmd_reset.c"
     "app/console/cmd_version.c"

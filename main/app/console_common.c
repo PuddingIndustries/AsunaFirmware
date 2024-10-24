@@ -13,12 +13,13 @@
 
 /* App */
 #include "app/console/cmd_free.h"
+#include "app/console/cmd_gnss.h"
 #include "app/console/cmd_ip.h"
+#include "app/console/cmd_lora.h"
 #include "app/console/cmd_ps.h"
 #include "app/console/cmd_reset.h"
 #include "app/console/cmd_version.h"
 #include "app/console/cmd_wifi.h"
-#include "app/console/cmd_gnss.h"
 #include "app/console_common.h"
 
 #define APP_CONSOLE_PROMPT_STR "asuna"
@@ -29,6 +30,7 @@ static const esp_console_cmd_t* s_app_console_cmd_list[] = {
     &app_console_cmd_free,
     &app_console_cmd_gnss,
     &app_console_cmd_ip,
+    &app_console_cmd_lora,
     &app_console_cmd_ps,
     &app_console_cmd_reset,
     &app_console_cmd_version,
