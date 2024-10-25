@@ -1,4 +1,5 @@
 idf_component_register(SRCS
+    "app/api/config/handler_lora.c"
     "app/api/config/handler_upgrade.c"
     "app/api/config/handler_wifi.c"
     "app/api/gnss/handler_stream.c"

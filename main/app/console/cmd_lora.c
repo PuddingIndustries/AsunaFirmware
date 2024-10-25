@@ -17,12 +17,6 @@
 static int app_console_lora_func(int argc, char **argv) {
     const uint8_t buf[4] = {0x00, 0x01, 0x02, 0x03};
     app_lora_server_broadcast(buf, 4);
-
-    lora_modem_config_t config;
-    app_lora_server_config_get(&config);
-
-    printf("Frequency: %ld.", config.frequency);
-
     return 0;
 }
 

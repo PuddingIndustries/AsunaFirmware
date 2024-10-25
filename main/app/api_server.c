@@ -8,6 +8,7 @@
 #include "esp_log.h"
 
 /* App */
+#include "app/api/config/handler_lora.h"
 #include "app/api/config/handler_upgrade.h"
 #include "app/api/config/handler_wifi.h"
 #include "app/api/gnss/handler_stream.h"
@@ -18,9 +19,9 @@
 typedef struct {
     char              *name;
     const httpd_uri_t *uri;
-    int                (*init)(void);
-    int                (*onopen)(httpd_handle_t handle, int fd);
-    int                (*onclose)(httpd_handle_t handle, int fd);
+    int (*init)(void);
+    int (*onopen)(httpd_handle_t handle, int fd);
+    int (*onclose)(httpd_handle_t handle, int fd);
 } app_api_server_handler_t;
 
 static const char *LOG_TAG = "asuna_httpsrv";
@@ -36,6 +37,20 @@ static const app_api_server_handler_t s_app_handler_list[] = {
     {
         .name    = "static_get",
         .uri     = &app_api_handler_static_get_uri,
+        .init    = NULL,
+        .onopen  = NULL,
+        .onclose = NULL,
+    },
+    {
+        .name    = "config_lora_get",
+        .uri     = &app_api_config_handler_lora_get_uri,
+        .init    = NULL,
+        .onopen  = NULL,
+        .onclose = NULL,
+    },
+    {
+        .name    = "config_lora_post",
+        .uri     = &app_api_config_handler_lora_post_uri,
         .init    = NULL,
         .onopen  = NULL,
         .onclose = NULL,

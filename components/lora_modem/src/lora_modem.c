@@ -2,11 +2,11 @@
 
 #include "llcc68.h"
 
-#define LORA_MODEM_ERROR_CHECK(x)         \
+#define LORA_MODEM_ERROR_CHECK(step, x)   \
     {                                     \
         status = x;                       \
         if (status != LLCC68_STATUS_OK) { \
-            return -1;                    \
+            return -step;                 \
         }                                 \
     }
 
@@ -34,23 +34,26 @@ static const uint8_t s_lora_modem_sync_word_table[][2] = {
     [LORA_MODEM_NETWORK_PRIVATE] = {0x14, 0x24},
 };
 
-int lora_modem_init(const void *context) {
+int lora_modem_init(const lora_modem_t *modem) {
     llcc68_status_t status;
 
-    LORA_MODEM_ERROR_CHECK(llcc68_reset(context));
-    LORA_MODEM_ERROR_CHECK(llcc68_init_retention_list(context));
-    LORA_MODEM_ERROR_CHECK(llcc68_set_reg_mode(context, LLCC68_REG_MODE_DCDC));
-    LORA_MODEM_ERROR_CHECK(llcc68_set_dio2_as_rf_sw_ctrl(context, true));
-    LORA_MODEM_ERROR_CHECK(llcc68_set_rx_tx_fallback_mode(context, LLCC68_FALLBACK_STDBY_XOSC));
-    LORA_MODEM_ERROR_CHECK(llcc68_set_pkt_type(context, LLCC68_PKT_TYPE_LORA));
-    LORA_MODEM_ERROR_CHECK(llcc68_cal(context, LLCC68_CAL_ALL));
-    LORA_MODEM_ERROR_CHECK(llcc68_cal_img_in_mhz(context, 868, 915));
-    LORA_MODEM_ERROR_CHECK(llcc68_set_dio_irq_params(context, 0x42, 0x42, 0x00, 0x00));
+    LORA_MODEM_ERROR_CHECK(1, llcc68_reset(modem));
+    LORA_MODEM_ERROR_CHECK(2, llcc68_init_retention_list(modem));
+    LORA_MODEM_ERROR_CHECK(3, llcc68_set_reg_mode(modem, LLCC68_REG_MODE_DCDC));
+    LORA_MODEM_ERROR_CHECK(4, llcc68_set_dio2_as_rf_sw_ctrl(modem, true));
+    LORA_MODEM_ERROR_CHECK(5, llcc68_set_rx_tx_fallback_mode(modem, LLCC68_FALLBACK_STDBY_XOSC));
+    LORA_MODEM_ERROR_CHECK(6, llcc68_set_pkt_type(modem, LLCC68_PKT_TYPE_LORA));
+    LORA_MODEM_ERROR_CHECK(7, llcc68_cal(modem, LLCC68_CAL_ALL));
+    LORA_MODEM_ERROR_CHECK(8, llcc68_cal_img_in_mhz(modem, 868, 915));
+
+    const uint16_t irq_mask = LLCC68_IRQ_TX_DONE | LLCC68_IRQ_RX_DONE;
+
+    LORA_MODEM_ERROR_CHECK(9, llcc68_set_dio_irq_params(modem, irq_mask, irq_mask, 0x00, 0x00));
 
     return 0;
 }
 
-int lora_modem_set_config(const void *context, const lora_modem_config_t *config) {
+int lora_modem_set_config(const lora_modem_t *modem, const lora_modem_config_t *config) {
     llcc68_status_t status;
 
     const llcc68_mod_params_lora_t params = {
@@ -69,17 +72,17 @@ int lora_modem_set_config(const void *context, const lora_modem_config_t *config
 
     const uint8_t *sync_word = s_lora_modem_sync_word_table[config->network_type];
 
-    LORA_MODEM_ERROR_CHECK(llcc68_cfg_tx_clamp(context));
-    LORA_MODEM_ERROR_CHECK(llcc68_set_tx_params(context, config->power, LLCC68_RAMP_40_US));
-    LORA_MODEM_ERROR_CHECK(llcc68_set_lora_mod_params(context, &params));
-    LORA_MODEM_ERROR_CHECK(llcc68_set_rf_freq(context, config->frequency));
-    LORA_MODEM_ERROR_CHECK(llcc68_set_pa_cfg(context, &pa_params));
-    LORA_MODEM_ERROR_CHECK(llcc68_write_register(context, 0x740, sync_word, 2U));
+    LORA_MODEM_ERROR_CHECK(1, llcc68_cfg_tx_clamp(modem));
+    LORA_MODEM_ERROR_CHECK(2, llcc68_set_tx_params(modem, config->power, LLCC68_RAMP_40_US));
+    LORA_MODEM_ERROR_CHECK(3, llcc68_set_lora_mod_params(modem, &params));
+    LORA_MODEM_ERROR_CHECK(4, llcc68_set_rf_freq(modem, config->frequency));
+    LORA_MODEM_ERROR_CHECK(5, llcc68_set_pa_cfg(modem, &pa_params));
+    LORA_MODEM_ERROR_CHECK(6, llcc68_write_register(modem, 0x740, sync_word, 2U));
 
     return 0;
 }
 
-int lora_modem_transmit(const void *context, const uint8_t *data, size_t length) {
+int lora_modem_transmit(const lora_modem_t *modem, const uint8_t *data, size_t length) {
     llcc68_status_t status;
 
     const llcc68_pkt_params_lora_t pkt_params = {
@@ -89,10 +92,15 @@ int lora_modem_transmit(const void *context, const uint8_t *data, size_t length)
         .crc_is_on            = true,
     };
 
-    LORA_MODEM_ERROR_CHECK(llcc68_set_lora_pkt_params(context, &pkt_params));
-    LORA_MODEM_ERROR_CHECK(llcc68_set_buffer_base_address(context, 0, 0xFF));
-    LORA_MODEM_ERROR_CHECK(llcc68_write_buffer(context, 0, data, length));
-    LORA_MODEM_ERROR_CHECK(llcc68_set_tx(context, 0));
+    LORA_MODEM_ERROR_CHECK(1, llcc68_set_lora_pkt_params(modem, &pkt_params));
+    LORA_MODEM_ERROR_CHECK(2, llcc68_set_buffer_base_address(modem, 0, 0xFF));
+    LORA_MODEM_ERROR_CHECK(3, llcc68_write_buffer(modem, 0, data, length));
+    LORA_MODEM_ERROR_CHECK(4, llcc68_set_tx(modem, 0));
 
     return 0;
+}
+
+void lora_modem_handle_interrupt(const lora_modem_t *modem) {
+    llcc68_irq_mask_t irq_mask;
+    llcc68_get_and_clear_irq_status(modem, &irq_mask);
 }

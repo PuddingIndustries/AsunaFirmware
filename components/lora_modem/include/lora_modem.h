@@ -37,6 +37,38 @@ typedef enum {
     LORA_MODEM_NETWORK_PRIVATE, /* Private network, sync word 0x1424 */
 } lora_modem_network_type_t;
 
+typedef enum {
+    LORA_MODEM_PIN_CS,
+    LORA_MODEM_PIN_RESET,
+} lora_modem_pin_t;
+
+typedef struct {
+    const uint8_t *tx_data;
+    uint8_t       *rx_data;
+
+    size_t length;
+} lora_modem_spi_transfer_t;
+
+typedef void (*lora_modem_cb_tx_done_fn_t)(void *handle);
+typedef void (*lora_modem_cb_rx_done_fn_t)(void *handle, uint8_t *data, size_t len);
+
+typedef int (*lora_modem_ops_spi_fn_t)(void *handle, lora_modem_spi_transfer_t *transfer);
+typedef int (*lora_modem_ops_pin_fn_t)(void *handle, lora_modem_pin_t pin, bool value);
+typedef int (*lora_modem_ops_wait_busy_fn_t)(void *handle);
+typedef int (*lora_modem_delay_fn_t)(void *handle, uint32_t delay_ms);
+
+typedef struct {
+    lora_modem_ops_spi_fn_t       spi;
+    lora_modem_ops_pin_fn_t       pin;
+    lora_modem_ops_wait_busy_fn_t wait_busy;
+    lora_modem_delay_fn_t         delay;
+} lora_modem_ops_t;
+
+typedef struct {
+    lora_modem_cb_rx_done_fn_t rx_done;
+    lora_modem_cb_tx_done_fn_t tx_done;
+} lora_modem_cb_t;
+
 typedef struct {
     uint32_t frequency;
     uint8_t  power;
@@ -49,8 +81,16 @@ typedef struct {
     bool            ldr_optimization;
 } lora_modem_config_t;
 
-int lora_modem_init(const void *context);
-int lora_modem_set_config(const void *context, const lora_modem_config_t *config);
-int lora_modem_transmit(const void *context, const uint8_t *data, size_t length);
+typedef struct {
+    lora_modem_cb_t  cb;
+    lora_modem_ops_t ops;
+
+    void *handle;
+} lora_modem_t;
+
+int  lora_modem_init(const lora_modem_t *modem);
+int  lora_modem_set_config(const lora_modem_t *modem, const lora_modem_config_t *config);
+int  lora_modem_transmit(const lora_modem_t *modem, const uint8_t *data, size_t length);
+void lora_modem_handle_interrupt(const lora_modem_t *modem);
 
 #endif  // LORA_MODEM_H

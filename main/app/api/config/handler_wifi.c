@@ -109,7 +109,7 @@ static app_netif_wifi_config_t *app_api_config_handler_wifi_deserialize(const ch
     cJSON *root_ap_chan = cJSON_GetObjectItem(root_ap, "chan");
     if (cJSON_IsInvalid(root_ap_chan)) goto del_json_exit;
 
-    cfg->ap_config.chan = cJSON_GetNumberValue(root_ap_chan);
+    cfg->ap_config.chan = (uint8_t)cJSON_GetNumberValue(root_ap_chan);
 
     /* Build STA configuration here... */
 
@@ -185,10 +185,12 @@ static esp_err_t app_api_config_handler_wifi_post(httpd_req_t *req) {
     if (payload == NULL) goto send_500;
 
     int ret = httpd_req_recv(req, payload, payload_size);
-    if (ret <= 0) goto send_500;
+    if (ret <= 0) goto free_buf_send_500;
 
     app_netif_wifi_config_t *cfg = app_api_config_handler_wifi_deserialize(payload);
-    if (cfg == NULL) goto send_500;
+    if (cfg == NULL) goto free_buf_send_500;
+
+    free(payload);
 
     ret = app_netif_wifi_config_set(cfg);
     free(cfg);
@@ -202,6 +204,9 @@ static esp_err_t app_api_config_handler_wifi_post(httpd_req_t *req) {
     httpd_resp_send(req, "{}", HTTPD_RESP_USE_STRLEN);
 
     return ESP_OK;
+
+free_buf_send_500:
+    free(payload);
 
 send_500:
     httpd_resp_set_status(req, "500 Internal Server Error");

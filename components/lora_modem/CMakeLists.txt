@@ -1,11 +1,10 @@
 idf_component_register(
     SRCS
-    "hal/llcc68_hal.c"
     "llcc68_driver/src/llcc68.c"
     "llcc68_driver/src/llcc68_driver_version.c"
+    "src/hal/llcc68_hal.c"
     "src/lora_modem.c"
     INCLUDE_DIRS
-    "hal"
     "include"
     "llcc68_driver/src"
 )
