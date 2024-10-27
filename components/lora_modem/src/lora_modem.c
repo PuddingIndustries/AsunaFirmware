@@ -103,4 +103,16 @@ int lora_modem_transmit(const lora_modem_t *modem, const uint8_t *data, size_t l
 void lora_modem_handle_interrupt(const lora_modem_t *modem) {
     llcc68_irq_mask_t irq_mask;
     llcc68_get_and_clear_irq_status(modem, &irq_mask);
+
+    if (modem->cb == NULL) {
+        return;
+    }
+
+    if (irq_mask & LLCC68_IRQ_TX_DONE) {
+        modem->cb(modem->handle, LORA_MODEM_CB_EVENT_TX_DONE);
+    }
+
+    if (irq_mask & LLCC68_IRQ_RX_DONE) {
+        modem->cb(modem->handle, LORA_MODEM_CB_EVENT_RX_DONE);
+    }
 }

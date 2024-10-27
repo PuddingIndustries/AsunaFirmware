@@ -15,8 +15,18 @@
 #include "app/lora_server.h"
 
 static int app_console_lora_func(int argc, char **argv) {
-    const uint8_t buf[4] = {0x00, 0x01, 0x02, 0x03};
-    app_lora_server_broadcast(buf, 4);
+    uint8_t *buf = malloc(1024);
+
+    for (size_t i = 0; i < 1024; i++) {
+        buf[i] = i;
+    }
+
+    if (buf == NULL) {
+        return ESP_ERR_NO_MEM;
+    }
+    app_lora_server_broadcast(buf, 1024);
+
+    free(buf);
     return 0;
 }
 

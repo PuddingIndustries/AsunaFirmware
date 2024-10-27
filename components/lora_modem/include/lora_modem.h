@@ -42,6 +42,11 @@ typedef enum {
     LORA_MODEM_PIN_RESET,
 } lora_modem_pin_t;
 
+typedef enum {
+    LORA_MODEM_CB_EVENT_TX_DONE,
+    LORA_MODEM_CB_EVENT_RX_DONE,
+} lora_modem_cb_event_t;
+
 typedef struct {
     const uint8_t *tx_data;
     uint8_t       *rx_data;
@@ -49,10 +54,9 @@ typedef struct {
     size_t length;
 } lora_modem_spi_transfer_t;
 
-typedef void (*lora_modem_cb_tx_done_fn_t)(void *handle);
-typedef void (*lora_modem_cb_rx_done_fn_t)(void *handle, uint8_t *data, size_t len);
+typedef void (*lora_modem_cb_fn_t)(void *handle, lora_modem_cb_event_t event);
 
-typedef int (*lora_modem_ops_spi_fn_t)(void *handle, lora_modem_spi_transfer_t *transfer);
+typedef int (*lora_modem_ops_spi_fn_t)(void *handle, const lora_modem_spi_transfer_t *transfer);
 typedef int (*lora_modem_ops_pin_fn_t)(void *handle, lora_modem_pin_t pin, bool value);
 typedef int (*lora_modem_ops_wait_busy_fn_t)(void *handle);
 typedef int (*lora_modem_delay_fn_t)(void *handle, uint32_t delay_ms);
@@ -63,11 +67,6 @@ typedef struct {
     lora_modem_ops_wait_busy_fn_t wait_busy;
     lora_modem_delay_fn_t         delay;
 } lora_modem_ops_t;
-
-typedef struct {
-    lora_modem_cb_rx_done_fn_t rx_done;
-    lora_modem_cb_tx_done_fn_t tx_done;
-} lora_modem_cb_t;
 
 typedef struct {
     uint32_t frequency;
@@ -82,8 +81,8 @@ typedef struct {
 } lora_modem_config_t;
 
 typedef struct {
-    lora_modem_cb_t  cb;
-    lora_modem_ops_t ops;
+    lora_modem_cb_fn_t cb;
+    lora_modem_ops_t   ops;
 
     void *handle;
 } lora_modem_t;

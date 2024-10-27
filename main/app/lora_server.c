@@ -15,6 +15,7 @@
 #include "lora_modem.h"
 
 /* App */
+#include "app/gnss_server.h"
 #include "app/lora_server.h"
 
 #define APP_LORA_SERVER_NVS_NAMESPACE "a_lora_server"
@@ -22,13 +23,13 @@
 
 #define APP_LORA_SERVER_SPI_HOST SPI2_HOST
 #define APP_LORA_SERVER_SPI_FREQ (4 * 1000 * 1000)
-#define APP_LORA_SERVER_PIN_SCK  12
-#define APP_LORA_SERVER_PIN_MOSI 11
-#define APP_LORA_SERVER_PIN_MISO 13
-#define APP_LORA_SERVER_PIN_CS   10
-#define APP_LORA_SERVER_PIN_RST  21
-#define APP_LORA_SERVER_PIN_INT  9
-#define APP_LORA_SERVER_PIN_BUSY 14
+#define APP_LORA_SERVER_PIN_SCK  (12)
+#define APP_LORA_SERVER_PIN_MOSI (11)
+#define APP_LORA_SERVER_PIN_MISO (13)
+#define APP_LORA_SERVER_PIN_CS   (10)
+#define APP_LORA_SERVER_PIN_RST  (21)
+#define APP_LORA_SERVER_PIN_INT  (9)
+#define APP_LORA_SERVER_PIN_BUSY (14)
 
 #define APP_LORA_SERVER_CMD_Q_LEN (16)
 
@@ -38,35 +39,36 @@
 
 #define APP_LORA_SERVER_POWER_DEFAULT (7) /* 7dBm */
 
-typedef enum {
-    APP_LORA_SERVER_CMD_TRANSMIT,
-    APP_LORA_SERVER_CMD_UPDATE_PARAMS,
-    APP_LORA_SERVER_CMD_HANDLE_IRQ,
-} app_lora_server_cmd_t;
-
 typedef struct {
-    app_lora_server_cmd_t cmd;
-    void                 *data;
-    size_t                data_len;
+    uint8_t *data;
+    size_t   data_len;
 } app_lora_server_cmd_queue_item_t;
 
 typedef struct {
-    lora_modem_t      lora_modem;
-    TaskHandle_t      task_handle;
-    SemaphoreHandle_t config_mutex;
-    QueueHandle_t     cmd_queue;
+    lora_modem_t         lora_modem;
+    app_gnss_cb_handle_t gnss_cb_handle;
+
+    TaskHandle_t task_broadcast;
+    TaskHandle_t task_manager;
+
+    SemaphoreHandle_t mutex_modem;
+
+    QueueHandle_t queue_transmit;
 } app_lora_server_state_t;
 
 static const char *LOG_TAG = "asuna_lora";
 
+static int  app_lora_server_gnss_forwarder_cb(void *handle, app_gnss_cb_type_t type, void *payload);
 static void app_lora_server_gpio_init(void);
 static int  app_lora_server_spi_init(void);
-static int  app_lora_modem_ops_spi(void *handle, lora_modem_spi_transfer_t *transfer);
+static int  app_lora_modem_ops_spi(void *handle, const lora_modem_spi_transfer_t *transfer);
 static int  app_lora_modem_ops_pin(void *handle, lora_modem_pin_t pin, bool value);
 static int  app_lora_modem_ops_wait_busy(void *handle);
 static int  app_lora_modem_ops_delay(void *handle, uint32_t delay_ms);
+static void app_lora_modem_cb_event(void *handle, lora_modem_cb_event_t event);
 static void app_lora_server_irq_handler(void *arg);
-static void app_lora_server_task(void *argument);
+static void app_lora_server_broadcast_task(void *argument);
+static void app_lora_server_manager_task(void *argument);
 
 static app_lora_server_state_t s_lora_server_state = {
     .lora_modem =
@@ -80,10 +82,14 @@ static app_lora_server_state_t s_lora_server_state = {
                     .wait_busy = app_lora_modem_ops_wait_busy,
                     .delay     = app_lora_modem_ops_delay,
                 },
+
+            .cb = app_lora_modem_cb_event,
         },
-    .task_handle  = NULL,
-    .config_mutex = NULL,
-    .cmd_queue    = NULL,
+    .gnss_cb_handle = NULL,
+    .task_broadcast = NULL,
+    .task_manager   = NULL,
+    .mutex_modem    = NULL,
+    .queue_transmit = NULL,
 };
 
 static const char *APP_LORA_SERVER_CFG_KEY_FLAG    = "cfg_valid"; /* Configuration key */
@@ -101,33 +107,73 @@ int app_lora_server_init(void) {
 
     ESP_LOGI(LOG_TAG, "Initializing LoRa server...");
 
-    s_lora_server_state.config_mutex = xSemaphoreCreateMutex();
-    if (s_lora_server_state.config_mutex == NULL) {
+    s_lora_server_state.mutex_modem = xSemaphoreCreateRecursiveMutex();
+    if (s_lora_server_state.mutex_modem == NULL) {
         ESP_LOGE(LOG_TAG, "Failed to create mutex.");
         return -3;
     }
 
-    s_lora_server_state.cmd_queue = xQueueCreate(APP_LORA_SERVER_CMD_Q_LEN, sizeof(app_lora_server_cmd_queue_item_t));
-    if (s_lora_server_state.cmd_queue == NULL) {
+    s_lora_server_state.queue_transmit =
+        xQueueCreate(APP_LORA_SERVER_CMD_Q_LEN, sizeof(app_lora_server_cmd_queue_item_t));
+    if (s_lora_server_state.queue_transmit == NULL) {
         ESP_LOGE(LOG_TAG, "Failed to create command queue.");
 
         ret = -4;
         goto del_mutex_exit;
     }
 
-    if (xTaskCreate(app_lora_server_task, "asuna_lora", 4096, &s_lora_server_state, 3,
-                    &s_lora_server_state.task_handle) != pdPASS) {
-        ESP_LOGE(LOG_TAG, "Task creation failed...");
+    app_lora_server_gpio_init();
+
+    if (app_lora_server_spi_init() != 0) {
+        ESP_LOGE(LOG_TAG, "Failed to initialize SPI interface.");
+        goto del_queue_exit;
+    }
+
+    if (xSemaphoreTakeRecursive(s_lora_server_state.mutex_modem, portMAX_DELAY) != pdPASS) {
+        ESP_LOGE(LOG_TAG, "Failed to acquire lock.");
+        goto del_queue_exit;
+    }
+
+    ret = lora_modem_init(&s_lora_server_state.lora_modem);
+    if (ret != 0) {
+        ESP_LOGE(LOG_TAG, "Failed to initialize LoRa modem: %d", ret);
+        goto del_queue_exit;
+    }
+
+    app_lora_server_config_t cfg;
+
+    if (app_lora_server_config_get(&cfg) != 0) {
+        ESP_LOGW(LOG_TAG, "Configuration invalid, restore to default...");
+        app_lora_server_config_init(&cfg);
+
+        if (app_lora_server_config_set(&cfg) != 0) {
+            ESP_LOGE(LOG_TAG, "Configuration validation failed...");
+            goto del_queue_exit;
+        }
+    } else {
+        ret = lora_modem_set_config(&s_lora_server_state.lora_modem, &cfg.modem_config);
+        if (ret != 0) {
+            goto del_queue_exit;
+        }
+    }
+
+    xSemaphoreGiveRecursive(s_lora_server_state.mutex_modem);
+
+    if (xTaskCreate(app_lora_server_manager_task, "asuna_lrm", 3072, &s_lora_server_state, 4,
+                    &s_lora_server_state.task_manager) != pdPASS) {
+        ESP_LOGE(LOG_TAG, "Manager task creation failed...");
+        ret = -3;
+
         goto del_queue_exit;
     }
 
     return 0;
 
 del_queue_exit:
-    vQueueDelete(s_lora_server_state.cmd_queue);
+    vQueueDelete(s_lora_server_state.queue_transmit);
 
 del_mutex_exit:
-    vSemaphoreDelete(s_lora_server_state.config_mutex);
+    vSemaphoreDelete(s_lora_server_state.mutex_modem);
 
     return ret;
 }
@@ -152,7 +198,7 @@ int app_lora_server_config_set(const app_lora_server_config_t *config) {
     if (config->modem_config.frequency > APP_LORA_SERVER_FREQUENCY_MAX) return -1;
     if (config->modem_config.frequency < APP_LORA_SERVER_FREQUENCY_MIN) return -1;
 
-    if (xSemaphoreTake(s_lora_server_state.config_mutex, portMAX_DELAY) != pdPASS) {
+    if (xSemaphoreTakeRecursive(s_lora_server_state.mutex_modem, portMAX_DELAY) != pdPASS) {
         return -2;
     }
 
@@ -176,17 +222,20 @@ int app_lora_server_config_set(const app_lora_server_config_t *config) {
 
     nvs_close(handle);
 
-    xSemaphoreGive(s_lora_server_state.config_mutex);
+    lora_modem_set_config(&s_lora_server_state.lora_modem, &config->modem_config);
+    xSemaphoreGiveRecursive(s_lora_server_state.mutex_modem);
 
-    const app_lora_server_cmd_queue_item_t cmd = {
-        .cmd      = APP_LORA_SERVER_CMD_UPDATE_PARAMS,
-        .data     = NULL,
-        .data_len = 0,
-    };
+    if (config->enabled) {
+        if (s_lora_server_state.gnss_cb_handle == NULL) {
+            s_lora_server_state.gnss_cb_handle = app_gnss_server_cb_register(
+                APP_GNSS_CB_RAW_RTCM, app_lora_server_gnss_forwarder_cb, &s_lora_server_state);
+        }
+    } else {
+        if (s_lora_server_state.gnss_cb_handle != NULL) {
+            app_gnss_server_cb_unregister(s_lora_server_state.gnss_cb_handle);
 
-    if (xQueueSend(s_lora_server_state.cmd_queue, &cmd, pdMS_TO_TICKS(100)) != pdPASS) {
-        ESP_LOGW(LOG_TAG, "Failed to issue configuration update command.");
-        return -1;
+            s_lora_server_state.gnss_cb_handle = NULL;
+        }
     }
 
     return 0;
@@ -196,7 +245,7 @@ int app_lora_server_config_get(app_lora_server_config_t *config) {
     int       ret = 0;
     esp_err_t err;
 
-    if (xSemaphoreTake(s_lora_server_state.config_mutex, portMAX_DELAY) != pdPASS) {
+    if (xSemaphoreTakeRecursive(s_lora_server_state.mutex_modem, portMAX_DELAY) != pdPASS) {
         return -1;
     }
 
@@ -264,7 +313,7 @@ int app_lora_server_config_get(app_lora_server_config_t *config) {
     nvs_close(handle);
 
 release_lock_exit:
-    xSemaphoreGive(s_lora_server_state.config_mutex);
+    xSemaphoreGiveRecursive(s_lora_server_state.mutex_modem);
 
     return ret;
 }
@@ -279,13 +328,12 @@ int app_lora_server_broadcast(const uint8_t *data, size_t length) {
 
     memcpy(payload, data, length);
 
-    app_lora_server_cmd_queue_item_t cmd = {
-        .cmd      = APP_LORA_SERVER_CMD_TRANSMIT,
+    const app_lora_server_cmd_queue_item_t cmd = {
         .data     = payload,
         .data_len = length,
     };
 
-    if (xQueueSend(s_lora_server_state.cmd_queue, &cmd, pdMS_TO_TICKS(100)) != pdPASS) {
+    if (xQueueSend(s_lora_server_state.queue_transmit, &cmd, pdMS_TO_TICKS(100)) != pdPASS) {
         ESP_LOGW(LOG_TAG, "Failed to enqueue packet.");
         goto free_buf_exit;
     }
@@ -296,6 +344,15 @@ free_buf_exit:
     free(payload);
 
     return -1;
+}
+
+static int app_lora_server_gnss_forwarder_cb(void *handle, app_gnss_cb_type_t type, void *payload) {
+    if (type == APP_GNSS_CB_RAW_RTCM) {
+        const app_gnss_rtcm_t *data = payload;
+        app_lora_server_broadcast((uint8_t *)data->data, data->data_len);
+    }
+
+    return 0;
 }
 
 static void app_lora_server_gpio_init(void) {
@@ -319,8 +376,6 @@ static void app_lora_server_gpio_init(void) {
     pin_cfg.intr_type    = GPIO_INTR_POSEDGE;
 
     gpio_config(&pin_cfg);
-
-    gpio_isr_handler_add(APP_LORA_SERVER_PIN_INT, app_lora_server_irq_handler, NULL);
 
     gpio_set_level(APP_LORA_SERVER_PIN_CS, 1U);
     gpio_set_level(APP_LORA_SERVER_PIN_RST, 1U);
@@ -358,13 +413,13 @@ static int app_lora_server_spi_init(void) {
     return 0;
 }
 
-static int app_lora_modem_ops_spi(void *handle, lora_modem_spi_transfer_t *xfer) {
+static int app_lora_modem_ops_spi(void *handle, const lora_modem_spi_transfer_t *transfer) {
     spi_device_handle_t spi_device = handle;
 
     spi_transaction_t txn = {
-        .tx_buffer = xfer->tx_data,
-        .rx_buffer = xfer->rx_data,
-        .length    = xfer->length * 8,
+        .tx_buffer = transfer->tx_data,
+        .rx_buffer = transfer->rx_data,
+        .length    = transfer->length * 8,
     };
 
     if (spi_device_polling_transmit(spi_device, &txn) != ESP_OK) {
@@ -409,114 +464,107 @@ static int app_lora_modem_ops_wait_busy(void *handle) {
     return 0;
 }
 
-static int app_lora_modem_ops_delay(void *handle, uint32_t delay_ms) {
+static int app_lora_modem_ops_delay(void *handle, const uint32_t delay_ms) {
     vTaskDelay(pdMS_TO_TICKS(delay_ms));
     return 0;
+}
+
+static void app_lora_modem_cb_event(void *handle, const lora_modem_cb_event_t event) {
+    switch (event) {
+        case LORA_MODEM_CB_EVENT_TX_DONE: {
+            ESP_LOGD(LOG_TAG, "Received TX_DONE event.");
+
+            xTaskNotify(s_lora_server_state.task_broadcast, BIT(0), eSetBits);
+
+            break;
+        }
+
+        default:
+            break;
+    }
 }
 
 static void app_lora_server_irq_handler(void *arg) {
     BaseType_t higher_priority_task_woken = pdFALSE;
 
-    const app_lora_server_cmd_queue_item_t cmd = {
-        .cmd = APP_LORA_SERVER_CMD_HANDLE_IRQ,
-    };
+    xTaskNotifyFromISR(s_lora_server_state.task_manager, BIT(0), eSetBits, &higher_priority_task_woken);
 
-    xQueueSendFromISR(s_lora_server_state.cmd_queue, &cmd, &higher_priority_task_woken);
     portYIELD_FROM_ISR(higher_priority_task_woken);
 }
 
-static void app_lora_server_task(void *argument) {
-    lora_modem_t *modem = &((app_lora_server_state_t *)argument)->lora_modem;
+static void app_lora_server_broadcast_task(void *argument) {
+    const lora_modem_t *modem = &((app_lora_server_state_t *)argument)->lora_modem;
 
-    bool                             is_initialized = false;
     app_lora_server_cmd_queue_item_t cmd;
-    app_lora_server_config_t         cfg;
+    uint32_t                         notified_value;
 
     for (;;) {
-        if (!is_initialized) {
-            app_lora_server_gpio_init();
-
-            if (app_lora_server_spi_init() != 0) {
-                ESP_LOGE(LOG_TAG, "Failed to initialize SPI interface.");
-
-                vTaskDelay(pdMS_TO_TICKS(1000));
-                continue;
-            }
-
-            int ret = lora_modem_init(modem);
-            if (ret != 0) {
-                ESP_LOGE(LOG_TAG, "Failed to initialize LoRa modem: %d", ret);
-
-                vTaskDelay(pdMS_TO_TICKS(1000));
-                continue;
-            }
-
-            if (app_lora_server_config_get(&cfg) != 0) {
-                ESP_LOGW(LOG_TAG, "Configuration invalid, restore to default...");
-                app_lora_server_config_init(&cfg);
-
-                if (app_lora_server_config_set(&cfg) != 0) {
-                    ESP_LOGE(LOG_TAG, "Configuration validation failed...");
-                    continue;
-                }
-            } else {
-                cmd.cmd = APP_LORA_SERVER_CMD_UPDATE_PARAMS;
-
-                if (xQueueSend(s_lora_server_state.cmd_queue, &cmd, portMAX_DELAY) != pdPASS) {
-                    ESP_LOGE(LOG_TAG, "Failed to send update parameters command...");
-                    continue;
-                }
-            }
-
-            if (cfg.enabled) {
-                /* TODO: Implement this. */
-                ESP_LOGI(LOG_TAG, "Register RTCM callback from GNSS server.");
-            }
-
-            is_initialized = true;
-            ESP_LOGI(LOG_TAG, "LoRa modem initialized.");
-        }
-
-        if (xQueueReceive(s_lora_server_state.cmd_queue, &cmd, portMAX_DELAY) != pdPASS) {
+        if (xQueueReceive(s_lora_server_state.queue_transmit, &cmd, portMAX_DELAY) != pdPASS) {
             ESP_LOGW(LOG_TAG, "Failed to receive from queue.");
             continue;
         }
 
-        switch (cmd.cmd) {
-            case APP_LORA_SERVER_CMD_UPDATE_PARAMS: {
-                if (app_lora_server_config_get(&cfg) != 0) {
-                    ESP_LOGW(LOG_TAG, "Failed to get LoRa modem configuration.");
-                    continue;
-                }
+        /* Split stream longer than 256 bytes into multiple packets. */
 
-                int ret = lora_modem_set_config(modem, &cfg.modem_config);
-                if (ret != 0) {
-                    ESP_LOGW(LOG_TAG, "Failed to set LoRa modem configuration: %d", ret);
-                    continue;
-                }
+        size_t data_ptr = 0;
+        while (data_ptr < cmd.data_len) {
+            size_t btw = cmd.data_len - data_ptr;
+            if (btw > 256) btw = 256;
 
-                ESP_LOGI(LOG_TAG, "LoRa modem configuration updated.");
-                break;
+            ESP_LOGI(LOG_TAG, "Transmitting %d of %d packet.", data_ptr + btw, cmd.data_len);
+
+            if (xSemaphoreTakeRecursive(s_lora_server_state.mutex_modem, portMAX_DELAY) != pdPASS) {
+                ESP_LOGE(LOG_TAG, "Failed to acquire lock.");
+                continue;
             }
 
-            case APP_LORA_SERVER_CMD_TRANSMIT: {
-                const int ret = lora_modem_transmit(modem, cmd.data, cmd.data_len);
+            const int ret = lora_modem_transmit(modem, &cmd.data[data_ptr], btw);
 
-                free(cmd.data);
-                if (ret != 0) {
-                    ESP_LOGW(LOG_TAG, "Failed to transmit data.");
-                }
-                break;
+            xSemaphoreGiveRecursive(s_lora_server_state.mutex_modem);
+
+            data_ptr += btw;
+
+            if (ret != 0) {
+                ESP_LOGW(LOG_TAG, "Failed to transmit data.");
             }
 
-            case APP_LORA_SERVER_CMD_HANDLE_IRQ: {
-                ESP_LOGI(LOG_TAG, "IRQ received.");
-                lora_modem_handle_interrupt(modem);
-                break;
+            if (xTaskNotifyWait(0UL, 0xFFFFFFFFUL, &notified_value, portMAX_DELAY) != pdPASS) {
+                ESP_LOGW(LOG_TAG, "Failed to wait for TX_DONE signal.");
             }
-
-            default:
-                break;
         }
+
+        free(cmd.data);
+    }
+}
+
+static void app_lora_server_manager_task(void *argument) {
+    const lora_modem_t *modem = &((app_lora_server_state_t *)argument)->lora_modem;
+
+    uint32_t notified_value;
+
+    gpio_isr_handler_add(APP_LORA_SERVER_PIN_INT, app_lora_server_irq_handler, NULL);
+
+    if (xTaskCreate(app_lora_server_broadcast_task, "asuna_lrb", 3072, &s_lora_server_state, 3,
+                    &s_lora_server_state.task_broadcast) != pdPASS) {
+        ESP_LOGE(LOG_TAG, "Task creation failed...");
+        vTaskDelete(NULL);
+    }
+
+    for (;;) {
+        if (xTaskNotifyWait(0UL, 0xFFFFFFFFUL, &notified_value, portMAX_DELAY) != pdPASS) {
+            ESP_LOGW(LOG_TAG, "Failed to wait for signals.");
+        }
+
+        if (xSemaphoreTakeRecursive(s_lora_server_state.mutex_modem, portMAX_DELAY) != pdPASS) {
+            ESP_LOGE(LOG_TAG, "Failed to acquire lock.");
+            continue;
+        }
+
+        lora_modem_handle_interrupt(modem);
+
+        xSemaphoreGiveRecursive(s_lora_server_state.mutex_modem);
+    }
+
+    for (;;) {
     }
 }
