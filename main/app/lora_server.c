@@ -93,7 +93,7 @@ static app_lora_server_state_t s_lora_server_state = {
 };
 
 static const char *APP_LORA_SERVER_CFG_KEY_FLAG    = "cfg_valid"; /* Configuration key */
-static const char *APP_LORA_SERVER_CFG_KEY_ENABLED = "enabled";   /* Enabled */
+static const char *APP_LORA_SERVER_CFG_KEY_FW_RTCM = "fw_rtcm";   /* Forward RTCM payload */
 static const char *APP_LORA_SERVER_CFG_KEY_FREQ    = "freq";      /* Frequency */
 static const char *APP_LORA_SERVER_CFG_KEY_POWER   = "power";     /* Transmit Power */
 static const char *APP_LORA_SERVER_CFG_KEY_TYPE    = "type";      /* Network Type */
@@ -179,7 +179,7 @@ del_mutex_exit:
 }
 
 void app_lora_server_config_init(app_lora_server_config_t *config) {
-    config->enabled = false;
+    config->fw_rtcm = false;
 
     config->modem_config.frequency        = APP_LORA_SERVER_FREQUENCY_DEFAULT;
     config->modem_config.power            = APP_LORA_SERVER_POWER_DEFAULT;
@@ -209,7 +209,7 @@ int app_lora_server_config_set(const app_lora_server_config_t *config) {
     /* ---- Store configuration ---- */
     ESP_ERROR_CHECK(nvs_set_u8(handle, APP_LORA_SERVER_CFG_KEY_FLAG, APP_LORA_SERVER_NVS_VERSION));
 
-    ESP_ERROR_CHECK(nvs_set_u8(handle, APP_LORA_SERVER_CFG_KEY_ENABLED, config->enabled));
+    ESP_ERROR_CHECK(nvs_set_u8(handle, APP_LORA_SERVER_CFG_KEY_FW_RTCM, config->fw_rtcm));
     ESP_ERROR_CHECK(nvs_set_u32(handle, APP_LORA_SERVER_CFG_KEY_FREQ, config->modem_config.frequency));
     ESP_ERROR_CHECK(nvs_set_u8(handle, APP_LORA_SERVER_CFG_KEY_POWER, config->modem_config.power));
     ESP_ERROR_CHECK(nvs_set_u8(handle, APP_LORA_SERVER_CFG_KEY_TYPE, config->modem_config.network_type));
@@ -225,7 +225,7 @@ int app_lora_server_config_set(const app_lora_server_config_t *config) {
     lora_modem_set_config(&s_lora_server_state.lora_modem, &config->modem_config);
     xSemaphoreGiveRecursive(s_lora_server_state.mutex_modem);
 
-    if (config->enabled) {
+    if (config->fw_rtcm) {
         if (s_lora_server_state.gnss_cb_handle == NULL) {
             s_lora_server_state.gnss_cb_handle = app_gnss_server_cb_register(
                 APP_GNSS_CB_RAW_RTCM, app_lora_server_gnss_forwarder_cb, &s_lora_server_state);
@@ -273,10 +273,10 @@ int app_lora_server_config_get(app_lora_server_config_t *config) {
 
     /* TODO: Handle structure update. */
 
-    /* ---- Load configuration: enabled ---- */
-    uint8_t enabled;
-    ESP_ERROR_CHECK(nvs_get_u8(handle, APP_LORA_SERVER_CFG_KEY_ENABLED, &enabled));
-    config->enabled = enabled;
+    /* ---- Load configuration: fw_rtcm ---- */
+    uint8_t fw_rtcm;
+    ESP_ERROR_CHECK(nvs_get_u8(handle, APP_LORA_SERVER_CFG_KEY_FW_RTCM, &fw_rtcm));
+    config->fw_rtcm = fw_rtcm;
 
     /* ---- Load configuration: frequency ---- */
     ESP_ERROR_CHECK(nvs_get_u32(handle, APP_LORA_SERVER_CFG_KEY_FREQ, &config->modem_config.frequency));
@@ -511,7 +511,7 @@ static void app_lora_server_broadcast_task(void *argument) {
             size_t btw = cmd.data_len - data_ptr;
             if (btw > 256) btw = 256;
 
-            ESP_LOGI(LOG_TAG, "Transmitting %d of %d packet.", data_ptr + btw, cmd.data_len);
+            ESP_LOGD(LOG_TAG, "Transmitting %d of %d packet.", data_ptr + btw, cmd.data_len);
 
             if (xSemaphoreTakeRecursive(s_lora_server_state.mutex_modem, portMAX_DELAY) != pdPASS) {
                 ESP_LOGE(LOG_TAG, "Failed to acquire lock.");

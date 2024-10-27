@@ -4,7 +4,7 @@
 #include "lora_modem.h"
 
 typedef struct {
-    bool                enabled;
+    bool                fw_rtcm;
     lora_modem_config_t modem_config;
 } app_lora_server_config_t;
 

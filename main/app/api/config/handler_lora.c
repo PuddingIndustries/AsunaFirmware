@@ -20,9 +20,9 @@ static char *app_api_config_handler_lora_serialize(const app_lora_server_config_
     cJSON *root = cJSON_CreateObject();
     if (root == NULL) return NULL;
 
-    cJSON *root_enabled = cJSON_CreateBool(config->enabled);
-    if (root_enabled == NULL) goto del_root_exit;
-    cJSON_AddItemToObject(root, "enabled", root_enabled);
+    cJSON *root_forward_rtcm = cJSON_CreateBool(config->fw_rtcm);
+    if (root_forward_rtcm == NULL) goto del_root_exit;
+    cJSON_AddItemToObject(root, "forward_rtcm", root_forward_rtcm);
 
     cJSON *root_modem_config = cJSON_CreateObject();
     if (root_modem_config == NULL) goto del_root_exit;
@@ -72,12 +72,12 @@ static app_lora_server_config_t *app_api_config_handler_lora_deserialize(const c
         goto free_obj_exit;
     }
 
-    cJSON *root_enabled = cJSON_GetObjectItem(j, "enabled");
-    if (cJSON_IsInvalid(root_enabled) || !cJSON_IsBool(root_enabled)) {
+    cJSON *root_forward_rtcm = cJSON_GetObjectItem(j, "forward_rtcm");
+    if (cJSON_IsInvalid(root_forward_rtcm) || !cJSON_IsBool(root_forward_rtcm)) {
         goto del_json_exit;
     }
 
-    cfg->enabled = cJSON_IsTrue(root_enabled);
+    cfg->fw_rtcm = cJSON_IsTrue(root_forward_rtcm);
 
     cJSON *root_modem_config = cJSON_GetObjectItem(j, "modem_config");
     if (cJSON_IsInvalid(root_modem_config) || !cJSON_IsObject(root_modem_config)) {
