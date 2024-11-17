@@ -54,6 +54,9 @@ typedef struct {
     SemaphoreHandle_t mutex_modem;
 
     QueueHandle_t queue_transmit;
+
+    uint8_t *rtcm_buffer;
+    size_t   rtcm_buffer_size;
 } app_lora_server_state_t;
 
 static const char *LOG_TAG = "asuna_lora";
@@ -90,6 +93,9 @@ static app_lora_server_state_t s_lora_server_state = {
     .task_manager   = NULL,
     .mutex_modem    = NULL,
     .queue_transmit = NULL,
+
+    .rtcm_buffer      = NULL,
+    .rtcm_buffer_size = 0,
 };
 
 static const char *APP_LORA_SERVER_CFG_KEY_FLAG    = "cfg_valid"; /* Configuration key */
@@ -347,9 +353,33 @@ free_buf_exit:
 }
 
 static int app_lora_server_gnss_forwarder_cb(void *handle, app_gnss_cb_type_t type, void *payload) {
+    app_lora_server_state_t *state = handle;
+
     if (type == APP_GNSS_CB_RAW_RTCM) {
         const app_gnss_rtcm_t *data = payload;
-        app_lora_server_broadcast((uint8_t *)data->data, data->data_len);
+
+        uint8_t *new_buffer = realloc(state->rtcm_buffer, (state->rtcm_buffer_size + data->data_len));
+        if (new_buffer == NULL) {
+            ESP_LOGE(LOG_TAG, "Failed to allocate buffer for RTCM payload.");
+            free(state->rtcm_buffer);
+
+            return -1;
+        }
+
+        state->rtcm_buffer = new_buffer;
+
+        memcpy(&state->rtcm_buffer[state->rtcm_buffer_size], data->data, data->data_len);
+
+        state->rtcm_buffer_size += data->data_len;
+
+        if (state->rtcm_buffer_size >= 256) {
+            app_lora_server_broadcast(state->rtcm_buffer, state->rtcm_buffer_size);
+
+            free(state->rtcm_buffer);
+
+            state->rtcm_buffer      = NULL;
+            state->rtcm_buffer_size = 0;
+        }
     }
 
     return 0;
