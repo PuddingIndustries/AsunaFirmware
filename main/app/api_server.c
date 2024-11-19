@@ -12,7 +12,6 @@
 #include "app/api/config/handler_upgrade.h"
 #include "app/api/config/handler_wifi.h"
 #include "app/api/gnss/handler_stream.h"
-#include "app/api/handler_index.h"
 #include "app/api/handler_static.h"
 #include "app/api_server.h"
 
@@ -27,20 +26,6 @@ typedef struct {
 static const char *LOG_TAG = "asuna_httpsrv";
 
 static const app_api_server_handler_t s_app_handler_list[] = {
-    {
-        .name    = "index_get",
-        .uri     = &app_api_handler_index_get_uri,
-        .init    = NULL,
-        .onopen  = NULL,
-        .onclose = NULL,
-    },
-    {
-        .name    = "static_get",
-        .uri     = &app_api_handler_static_get_uri,
-        .init    = NULL,
-        .onopen  = NULL,
-        .onclose = NULL,
-    },
     {
         .name    = "config_lora_get",
         .uri     = &app_api_config_handler_lora_get_uri,
@@ -90,6 +75,13 @@ static const app_api_server_handler_t s_app_handler_list[] = {
         .onopen  = app_api_gnss_handler_stream_ws_onopen,
         .onclose = app_api_gnss_handler_stream_ws_onclose,
     },
+    {
+        .name    = "default_get",
+        .uri     = &app_api_handler_static_default_get_uri,
+        .init    = NULL,
+        .onopen  = NULL,
+        .onclose = NULL,
+    }, /* Wildcard match, must be the last one */
 };
 
 static httpd_handle_t s_app_api_handle = NULL;

@@ -3,7 +3,6 @@ idf_component_register(SRCS
     "app/api/config/handler_upgrade.c"
     "app/api/config/handler_wifi.c"
     "app/api/gnss/handler_stream.c"
-    "app/api/handler_index.c"
     "app/api/handler_static.c"
     "app/api_server.c"
     "app/console/cmd_free.c"

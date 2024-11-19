@@ -49,7 +49,6 @@ void app_main(void) {
 
     ESP_LOGI(LOG_TAG, "Project Asuna -- Initializing...");
 
-    APP_ERROR_CHECK(app_vfs_common_init(), "virtual file system");
     APP_ERROR_CHECK(app_version_manager_init(), "version manager");
     APP_ERROR_CHECK(app_console_init(), "console");
     APP_ERROR_CHECK(app_netif_init(), "network interfaces");
