@@ -33,8 +33,25 @@ static int app_console_version_func(int argc, char **argv) {
             return -1;
         }
 
-        printf("\tOTA slot #%d [%c]:\n", i, version.is_current ? '+' : '-');
-        if (version.is_valid) {
+        char version_state;
+        switch (version.state) {
+            case APP_OTA_SLOT_STATE_IN_USE:
+                version_state = '+';
+                break;
+            case APP_OTA_SLOT_STATE_READY:
+                version_state = '-';
+                break;
+            case APP_OTA_SLOT_STATE_INVALID:
+                version_state = '!';
+                break;
+            case APP_OTA_SLOT_STATE_EMPTY:
+            default:
+                version_state = 'x';
+                break;
+        }
+
+        printf("\tOTA slot #%d [%c]:\n", i, version_state);
+        if (version.state != APP_OTA_SLOT_STATE_EMPTY) {
             app_console_version_print(&version);
         } else {
             printf("\t\tSlot is empty or invalid.\n");

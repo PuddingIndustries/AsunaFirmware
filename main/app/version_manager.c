@@ -6,6 +6,7 @@
 #include "freertos/task.h"
 
 /* IDF */
+#include "esp_image_format.h"
 #include "esp_log.h"
 #include "esp_ota_ops.h"
 
@@ -48,12 +49,12 @@ int app_version_manager_get_status(app_ota_slot_t slot, app_version_t *version) 
 
     switch (app_part->subtype) {
         case ESP_PARTITION_SUBTYPE_APP_OTA_0: {
-            if (slot == APP_OTA_SLOT_0) version->is_current = true;
+            if (slot == APP_OTA_SLOT_0) version->state = APP_OTA_SLOT_STATE_IN_USE;
             break;
         }
 
         case ESP_PARTITION_SUBTYPE_APP_OTA_1: {
-            if (slot == APP_OTA_SLOT_1) version->is_current = true;
+            if (slot == APP_OTA_SLOT_1) version->state = APP_OTA_SLOT_STATE_IN_USE;
             break;
         }
 
@@ -61,9 +62,7 @@ int app_version_manager_get_status(app_ota_slot_t slot, app_version_t *version) 
             break;
     }
 
-    if (version->is_current) {
-        version->is_valid = true;
-
+    if (version->state == APP_OTA_SLOT_STATE_IN_USE) {
         strncpy(version->name, app_desc->project_name, sizeof(version->name));
         strncpy(version->app_version, app_desc->version, sizeof(version->app_version));
         strncpy(version->idf_version, app_desc->idf_ver, sizeof(version->idf_version));
@@ -76,11 +75,19 @@ int app_version_manager_get_status(app_ota_slot_t slot, app_version_t *version) 
     } else {
         esp_app_desc_t nxt_desc;
         if (esp_ota_get_partition_description(nxt_part, &nxt_desc) != ESP_OK) {
-            version->is_valid = false;
+            version->state = APP_OTA_SLOT_STATE_EMPTY;
 
             /* Do not copy invalid values here. */
         } else {
-            version->is_valid = true;
+            uint8_t sha256_buf[32];
+
+            /* Validate image. */
+
+            if (esp_partition_get_sha256(nxt_part, sha256_buf) == ESP_ERR_IMAGE_INVALID) {
+                version->state = APP_OTA_SLOT_STATE_INVALID;
+            } else {
+                version->state = APP_OTA_SLOT_STATE_READY;
+            }
 
             strncpy(version->name, nxt_desc.project_name, sizeof(version->name));
             strncpy(version->app_version, nxt_desc.version, sizeof(version->app_version));
@@ -88,8 +95,8 @@ int app_version_manager_get_status(app_ota_slot_t slot, app_version_t *version) 
             strncpy(version->date, nxt_desc.date, sizeof(version->date));
             strncpy(version->time, nxt_desc.time, sizeof(version->time));
 
-            for (size_t i = 0; i < sizeof(nxt_desc.app_elf_sha256); i++) {
-                snprintf(&version->sha256[2 * i], 3, "%02x", nxt_desc.app_elf_sha256[i]);
+            for (size_t i = 0; i < sizeof(sha256_buf); i++) {
+                snprintf(&version->sha256[2 * i], 3, "%02x", sha256_buf[i]);
             }
         }
     }

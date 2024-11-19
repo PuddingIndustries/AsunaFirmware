@@ -55,6 +55,13 @@ typedef struct {
 
 static const char *LOG_TAG = "asuna_httpupd";
 
+static const char *s_upgrade_version_state_str[] = {
+    [APP_OTA_SLOT_STATE_EMPTY]   = "empty",
+    [APP_OTA_SLOT_STATE_READY]   = "ready",
+    [APP_OTA_SLOT_STATE_IN_USE]  = "in_use",
+    [APP_OTA_SLOT_STATE_INVALID] = "invalid",
+};
+
 static app_api_config_upgrade_state_t s_upgrade_state = {
     .ota =
         {
@@ -81,15 +88,11 @@ static char *app_api_config_handler_upgrade_serialize(const app_version_t *versi
         if (slot == NULL) goto del_root_exit;
         cJSON_AddItemToObject(version, "slot", slot);
 
-        cJSON *in_use = cJSON_CreateBool(versions[i].is_current);
-        if (in_use == NULL) goto del_root_exit;
-        cJSON_AddItemToObject(version, "in_use", in_use);
+        cJSON *state = cJSON_CreateString(s_upgrade_version_state_str[versions[i].state]);
+        if (state == NULL) goto del_root_exit;
+        cJSON_AddItemToObject(version, "state", state);
 
-        cJSON *valid = cJSON_CreateBool(versions[i].is_valid);
-        if (valid == NULL) goto del_root_exit;
-        cJSON_AddItemToObject(version, "valid", valid);
-
-        if (!versions[i].is_valid) continue;
+        if (versions[i].state == APP_OTA_SLOT_STATE_EMPTY) continue;
         /* The following entries only exists for a valid partition */
 
         cJSON *name = cJSON_CreateString(versions[i].name);
@@ -143,11 +146,13 @@ static app_api_config_upgrade_ota_packet_t *app_api_config_handler_upgrade_packe
 
     app_api_config_upgrade_ota_packet_t *pkt = malloc(sizeof(app_api_config_upgrade_ota_packet_t));
     if (pkt == NULL) {
+        ESP_LOGE(LOG_TAG, "Failed to allocate OTA packet.");
         return NULL;
     }
 
     cJSON *j = cJSON_Parse(json);
     if (j == NULL) {
+        ESP_LOGE(LOG_TAG, "Failed to parse OTA JSON payload.");
         goto free_pkt_exit;
     }
 
@@ -175,7 +180,7 @@ static app_api_config_upgrade_ota_packet_t *app_api_config_handler_upgrade_packe
         cJSON *root_payload_id = cJSON_GetObjectItem(root_payload, "id");
         if (cJSON_IsInvalid(root_payload_id)) goto del_json_exit;
 
-        pkt->payload.id = cJSON_GetNumberValue(root_payload_id);
+        pkt->payload.id = (size_t)cJSON_GetNumberValue(root_payload_id);
 
         cJSON *root_payload_data = cJSON_GetObjectItem(root_payload, "data");
         if (cJSON_IsInvalid(root_payload_data)) goto del_json_exit;
@@ -242,7 +247,8 @@ static esp_err_t app_api_config_handler_upgrade_post(httpd_req_t *req) {
 
     app_api_config_upgrade_ota_packet_t *packet = app_api_config_handler_upgrade_packet_deserialize(payload);
     if (packet == NULL) {
-        goto free_buf_send_500;
+        ESP_LOGW(LOG_TAG, "Failed to deserialize packet.");
+        goto free_buf_send_400;
     }
 
     char resp[128];
@@ -258,7 +264,8 @@ static esp_err_t app_api_config_handler_upgrade_post(httpd_req_t *req) {
                 goto free_pkt_send_500;
             }
 
-            s_upgrade_state.ota.status = APP_OTA_STATUS_IN_PROGRESS;
+            s_upgrade_state.ota.status    = APP_OTA_STATUS_IN_PROGRESS;
+            s_upgrade_state.ota.packet_id = 0;
 
             snprintf(resp, sizeof(resp), "{\"status\": \"success\", \"session\": \"%s\"}", s_upgrade_state.ota.session);
             break;
@@ -266,16 +273,26 @@ static esp_err_t app_api_config_handler_upgrade_post(httpd_req_t *req) {
 
         case APP_OTA_ACTION_WRITE: {
             if (s_upgrade_state.ota.status != APP_OTA_STATUS_IN_PROGRESS) {
+                ESP_LOGW(LOG_TAG, "OTA session is not started.");
                 goto free_pkt_send_400;
             }
 
             if (strcmp(s_upgrade_state.ota.session, packet->session) != 0) {
+                ESP_LOGW(LOG_TAG, "Not our OTA session.");
+                goto free_pkt_send_400;
+            }
+
+            if (s_upgrade_state.ota.packet_id != packet->payload.id) {
+                ESP_LOGW(LOG_TAG, "Out-of-order OTA packet.");
                 goto free_pkt_send_400;
             }
 
             if (app_version_manager_ota_save(packet->payload.data, packet->payload.len) != 0) {
+                ESP_LOGE(LOG_TAG, "OTA payload write failed.");
                 goto free_pkt_send_500;
             }
+
+            s_upgrade_state.ota.packet_id++;
 
             snprintf(resp, sizeof(resp), "{\"status\": \"success\"}");
             break;
@@ -283,14 +300,17 @@ static esp_err_t app_api_config_handler_upgrade_post(httpd_req_t *req) {
 
         case APP_OTA_ACTION_COMMIT: {
             if (s_upgrade_state.ota.status != APP_OTA_STATUS_IN_PROGRESS) {
+                ESP_LOGW(LOG_TAG, "OTA session is not started");
                 goto free_pkt_send_400;
             }
 
             if (strcmp(s_upgrade_state.ota.session, packet->session) != 0) {
+                ESP_LOGW(LOG_TAG, "Not our OTA session.");
                 goto free_pkt_send_400;
             }
 
             if (app_version_manager_ota_commit() != 0) {
+                ESP_LOGE(LOG_TAG, "OTA commit failed.");
                 goto free_pkt_send_500;
             }
 
@@ -324,10 +344,14 @@ static esp_err_t app_api_config_handler_upgrade_post(httpd_req_t *req) {
 
 free_pkt_send_400:
     free(packet);
+
+free_buf_send_400:
     free(payload);
 
     httpd_resp_set_status(req, "400 Bad Request");
     httpd_resp_send(req, "{}", HTTPD_RESP_USE_STRLEN);
+
+    return ESP_FAIL;
 
 free_pkt_send_500:
     free(packet);
@@ -338,6 +362,8 @@ free_buf_send_500:
 send_500:
     httpd_resp_set_status(req, "500 Internal Server Error");
     httpd_resp_send(req, "{}", HTTPD_RESP_USE_STRLEN);
+
+    return ESP_FAIL;
 
 send_413:
     httpd_resp_set_status(req, "413 Payload Too Large");

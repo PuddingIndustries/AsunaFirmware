@@ -7,9 +7,15 @@ typedef enum {
     APP_OTA_SLOT_END,
 } app_ota_slot_t;
 
+typedef enum {
+    APP_OTA_SLOT_STATE_EMPTY,
+    APP_OTA_SLOT_STATE_READY,
+    APP_OTA_SLOT_STATE_IN_USE,
+    APP_OTA_SLOT_STATE_INVALID,
+} app_ota_slot_state_t;
+
 typedef struct {
-    bool is_current;
-    bool is_valid;
+    app_ota_slot_state_t state;
 
     char name[32];
     char date[16];
