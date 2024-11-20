@@ -8,5 +8,5 @@ idf_component_register(
     EMBED_FILES
     "dist/index.html.gz"
     "dist/assets/index-730q9ghE.css.gz"
-    "dist/assets/index-DJLYnhRy.js.gz"
+    "dist/assets/index-qCH7JbSB.js.gz"
 )

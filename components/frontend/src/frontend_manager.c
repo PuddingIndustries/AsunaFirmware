@@ -5,12 +5,15 @@
 
 #include "frontend_manager.h"
 
+#define FEMGR_CSS_FILENAME "730q9ghE"
+#define FEMGR_JS_FILENAME  "qCH7JbSB"
+
 extern const uint8_t index_html_gz_start[] asm("_binary_index_html_gz_start");
 extern const uint8_t index_html_gz_end[] asm("_binary_index_html_gz_end");
-extern const uint8_t index_css_gz_start[] asm("_binary_index_730q9ghE_css_gz_start");
-extern const uint8_t index_css_gz_end[] asm("_binary_index_730q9ghE_css_gz_end");
-extern const uint8_t index_js_start[] asm("_binary_index_DJLYnhRy_js_gz_start");
-extern const uint8_t index_js_end[] asm("_binary_index_DJLYnhRy_js_gz_end");
+extern const uint8_t index_css_gz_start[] asm("_binary_index_" FEMGR_CSS_FILENAME "_css_gz_start");
+extern const uint8_t index_css_gz_end[] asm("_binary_index_" FEMGR_CSS_FILENAME "_css_gz_end");
+extern const uint8_t index_js_start[] asm("_binary_index_" FEMGR_JS_FILENAME "_js_gz_start");
+extern const uint8_t index_js_end[] asm("_binary_index_" FEMGR_JS_FILENAME "_js_gz_end");
 
 typedef struct {
     const char    *path;
@@ -27,13 +30,13 @@ static const femgr_file_t s_femgr_files[] = {
         .data_end   = index_html_gz_end,
     },
     {
-        .path       = "/assets/index-730q9ghE.css",
+        .path       = "/assets/index-" FEMGR_CSS_FILENAME ".css",
         .mime_type  = "text/css",
         .data_start = index_css_gz_start,
         .data_end   = index_css_gz_end,
     },
     {
-        .path       = "/assets/index-DJLYnhRy.js",
+        .path       = "/assets/index-" FEMGR_JS_FILENAME ".js",
         .mime_type  = "text/javascript",
         .data_start = index_js_start,
         .data_end   = index_js_end,

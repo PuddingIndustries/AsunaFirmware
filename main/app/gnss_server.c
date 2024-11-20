@@ -201,13 +201,15 @@ static void app_gnss_reset(void) {
     vTaskDelay(pdMS_TO_TICKS(2000));
 }
 
-static void app_gnss_pps_isr_handler(void* arg) {
+static void IRAM_ATTR app_gnss_pps_isr_handler(void* arg) {
     const app_gnss_server_state_t* state = arg;
 
     BaseType_t xHigherPriorityTaskWoken = pdFALSE;
 
     xTaskNotifyFromISR(state->pps_event_task, BIT0, eSetBits, &xHigherPriorityTaskWoken);
-    portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
+    if (xHigherPriorityTaskWoken) {
+        portYIELD_FROM_ISR();
+    }
 }
 
 static void app_gnss_uart_event_task(void* parameters) {

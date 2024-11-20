@@ -98,6 +98,7 @@ int app_api_server_init(void) {
 
     httpd_config_t httpd_config = HTTPD_DEFAULT_CONFIG();
 
+    httpd_config.task_priority    = 2;
     httpd_config.max_uri_handlers = handler_count;
     httpd_config.uri_match_fn     = httpd_uri_match_wildcard;
     httpd_config.open_fn          = app_api_server_socket_open_callback;

@@ -39,7 +39,7 @@ typedef struct {
 } app_gnss_pps_t;
 
 typedef void *app_gnss_cb_handle_t;
-typedef int   (*app_gnss_cb_t)(void *handle, app_gnss_cb_type_t type, void *payload);
+typedef int (*app_gnss_cb_t)(void *handle, app_gnss_cb_type_t type, void *payload);
 
 int                  app_gnss_server_init(void);
 app_gnss_cb_handle_t app_gnss_server_cb_register(app_gnss_cb_type_t type, app_gnss_cb_t cb, void *handle);
