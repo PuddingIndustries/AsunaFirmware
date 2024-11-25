@@ -13,6 +13,8 @@
 #include "app/api/config/handler_wifi.h"
 #include "app/api/gnss/handler_stream.h"
 #include "app/api/handler_static.h"
+#include "app/api/status/handler_network.h"
+#include "app/api/status/handler_wifi.h"
 #include "app/api_server.h"
 
 typedef struct {
@@ -64,6 +66,20 @@ static const app_api_server_handler_t s_app_handler_list[] = {
     {
         .name    = "config_wifi_post",
         .uri     = &app_api_config_handler_wifi_post_uri,
+        .init    = NULL,
+        .onopen  = NULL,
+        .onclose = NULL,
+    },
+    {
+        .name    = "status_network_get",
+        .uri     = &app_api_status_handler_network_get_uri,
+        .init    = NULL,
+        .onopen  = NULL,
+        .onclose = NULL,
+    },
+    {
+        .name    = "status_wifi_get",
+        .uri     = &app_api_status_handler_wifi_get_uri,
         .init    = NULL,
         .onopen  = NULL,
         .onclose = NULL,

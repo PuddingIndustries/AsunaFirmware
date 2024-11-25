@@ -1,0 +1,6 @@
+#ifndef APP_API_STATUS_HANDLER_NETWORK_H
+#define APP_API_STATUS_HANDLER_NETWORK_H
+
+extern const httpd_uri_t app_api_status_handler_network_get_uri;
+
+#endif //APP_API_STATUS_HANDLER_NETWORK_H

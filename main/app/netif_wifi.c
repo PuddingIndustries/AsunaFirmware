@@ -12,6 +12,7 @@
 #include "nvs_flash.h"
 
 /* App */
+#include "app/netif_common.h"
 #include "app/netif_wifi.h"
 
 #define APP_NETIF_WIFI_NVS_NAMESPACE "a_netif_wifi"
@@ -72,8 +73,11 @@ int app_netif_wifi_init(void) {
 
     ESP_ERROR_CHECK(esp_wifi_init(&cfg));
 
-    esp_netif_create_default_wifi_ap();
-    esp_netif_create_default_wifi_sta();
+    esp_netif_t *netif_ap  = esp_netif_create_default_wifi_ap();
+    esp_netif_t *netif_sta = esp_netif_create_default_wifi_sta();
+
+    app_netif_register(APP_NETIF_WIFI_AP, netif_ap);
+    app_netif_register(APP_NETIF_WIFI_STA, netif_sta);
 
     ESP_ERROR_CHECK(esp_event_handler_instance_register(WIFI_EVENT, ESP_EVENT_ANY_ID, &app_netif_wifi_event_handler,
                                                         NULL, &instance_any_id));
@@ -332,7 +336,7 @@ int app_netif_wifi_status_get(app_netif_wifi_status_t *status) {
         }
 
         strncpy(status->sta_status.ssid, (const char *)record.ssid, sizeof(status->sta_status.ssid));
-        memcpy(status->sta_status.bssid, record.bssid, sizeof(status->sta_status.bssid));
+        snprintf(status->sta_status.bssid, sizeof(status->sta_status.bssid), MACSTR, MAC2STR(record.bssid));
 
         status->sta_status.rssi = record.rssi;
     } else {

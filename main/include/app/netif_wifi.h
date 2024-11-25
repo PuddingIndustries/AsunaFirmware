@@ -29,8 +29,8 @@ typedef struct {
 typedef struct {
     uint8_t connected;
 
-    char    ssid[32];
-    uint8_t bssid[6];
+    char ssid[32];
+    char bssid[20];
 
     int8_t rssi;
 } app_netif_wifi_sta_status_t;

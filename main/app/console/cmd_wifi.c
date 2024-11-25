@@ -76,6 +76,7 @@ static int app_console_wifi_subcommand_status(int argc, char **argv) {
             printf("connected.\n");
 
             printf("\t\tSSID: %s\n", status.sta_status.ssid);
+            printf("\t\tBSSID: %s\n", status.sta_status.bssid);
             printf("\t\tRSSI: %ddBm\n", status.sta_status.rssi);
         } else {
             printf("connecting...\n");
