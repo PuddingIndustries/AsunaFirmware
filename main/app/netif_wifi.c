@@ -42,7 +42,7 @@ typedef struct {
     void                       *parameter;
 } app_netif_wifi_queue_item_t;
 
-static const char *APP_LORA_SERVER_CFG_KEY_FLAG        = "cfg_valid";
+static const char *APP_LORA_SERVER_CFG_KEY_FLAG       = "cfg_valid";
 static const char *APP_NETIF_WIFI_CFG_KEY_AP_ENABLED  = "ap_enabled";
 static const char *APP_NETIF_WIFI_CFG_KEY_AP_CHAN     = "ap_chan";
 static const char *APP_NETIF_WIFI_CFG_KEY_AP_SSID     = "ap_ssid";
@@ -300,8 +300,7 @@ void app_netif_wifi_config_init(app_netif_wifi_config_t *config) {
     snprintf(config->ap_config.ssid, sizeof(config->ap_config.ssid), APP_NETIF_WIFI_AP_SSID_PREFIX "%02X%02X%02X",
              ap_mac[3], ap_mac[4], ap_mac[5]);
 
-    snprintf(config->ap_config.pass, sizeof(config->ap_config.pass), "%02x%02x%02x%02x", ap_mac[2], ap_mac[3],
-             ap_mac[4], ap_mac[5]);
+    snprintf(config->ap_config.pass, sizeof(config->ap_config.pass), "aa%02x%02x%02x", ap_mac[3], ap_mac[4], ap_mac[5]);
 
     snprintf((char *)config->sta_config.ssid, sizeof(config->sta_config.ssid), APP_NETIF_WIFI_STA_DEFAULT_SSID);
     snprintf((char *)config->sta_config.pass, sizeof(config->sta_config.pass), APP_NETIF_WIFI_STA_DEFAULT_PASS);
