@@ -6,7 +6,7 @@
 #include "frontend_manager.h"
 
 #define FEMGR_CSS_FILENAME "730q9ghE"
-#define FEMGR_JS_FILENAME  "qCH7JbSB"
+#define FEMGR_JS_FILENAME  "vcbbHh1K"
 
 extern const uint8_t index_html_gz_start[] asm("_binary_index_html_gz_start");
 extern const uint8_t index_html_gz_end[] asm("_binary_index_html_gz_end");
